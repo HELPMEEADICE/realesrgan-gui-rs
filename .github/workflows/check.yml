@@ -1,0 +1,76 @@
+name: check
+
+# Rust + Slint 语法检查。
+# 说明：ui/app.slint 由 build.rs 里的 slint_build 编译，所以 cargo check / clippy
+# 会顺带完整校验 Slint 语法与属性名，.slint 写错会直接让下面的步骤失败。
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-check-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-check-cargo-
+            ${{ runner.os }}-cargo-
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libfontconfig1-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            libudev-dev
+
+      # 只做提示不做门禁：当前代码还没跑过 cargo fmt，直接卡住会挡住其他检查。
+      # 等代码统一格式化后，去掉 continue-on-error 即可变成强制检查。
+      - name: Rust 格式检查 (cargo fmt)
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      - name: Cargo check（含 Slint 语法校验）
+        run: cargo check --all-targets --locked
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --locked

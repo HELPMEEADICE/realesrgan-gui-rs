@@ -1,16 +1,15 @@
 name: build
 
+# 手动触发：三平台编译，产物上传到 Actions artifacts。
+# 发布 Release 时触发：三平台编译并打包，产物上传到该 Release。
 on:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
   workflow_dispatch:
-    inputs:
-      release:
-        description: Input something to release an automated build
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -66,21 +65,26 @@ jobs:
           echo "REGUI_BUILD_TIME=$(date +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
           cargo build --release --locked
 
-      - name: Run tests
-        run: cargo test --release --locked
-
+      # 发布流程需要这些 artifacts 作为中转，所以两种触发方式都上传。
       - name: Upload result
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: target/release/${{ matrix.binary }}
 
+  # 只有 Release 触发时才打包并上传到 Release 资产；
+  # 手动触发时到这里结束，产物在 Actions 的 artifacts 里下载。
   release:
-    runs-on: ubuntu-latest
     needs: build
-    if: ${{ github.event.inputs.release }}
+    if: ${{ github.event_name == 'release' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
       - uses: actions/download-artifact@v4
         with:
           name: realesrgan-gui-Windows
@@ -93,6 +97,7 @@ jobs:
         with:
           name: realesrgan-gui-macOS
           path: dist-macOS
+
       - name: Create release assets
         id: vars
         run: |
@@ -100,10 +105,6 @@ jobs:
           REAL_ESRGAN_VERSION=v0.2.5.0
           REAL_ESRGAN_RELEASE_TIME=20220424
           REAL_ESRGAN_PLATFORM=
-
-          BUILD_TIME=$(date +%Y%m%d-%H%I%S)
-          echo "release_name=Automated build ${BUILD_TIME}" >> $GITHUB_OUTPUT
-          echo "tag_name=autobuild-${BUILD_TIME}" >> $GITHUB_OUTPUT
 
           mkdir release
 
@@ -159,12 +160,11 @@ jobs:
           echo "release_files<<EOF" >> $GITHUB_OUTPUT
           find release -type f >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-      - name: Release automated build
-        uses: softprops/action-gh-release@v1
-        if: ${{ github.event.inputs.release }}
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
         with:
-          name: ${{ steps.vars.outputs.release_name }}
-          tag_name: ${{ steps.vars.outputs.tag_name }}
+          tag_name: ${{ github.event.release.tag_name }}
           files: ${{ steps.vars.outputs.release_files }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
