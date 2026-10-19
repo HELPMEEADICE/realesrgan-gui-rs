@@ -32,6 +32,16 @@ tauri-winrt-notification = "0.8"
 slint-build = "1.18"
 
 [profile.release]
-opt-level = 2
-lto = "thin"
+# 性能优先的发布配置：最高优化等级 + Fat LTO + 单 codegen unit，
+# 让跨 crate 内联与 LLVM 全局优化发挥到极限（代价是编译时间变长）。
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+incremental = false
+overflow-checks = false
 strip = true
+
+# 依赖同样按最高等级优化（Fat LTO 会一并参与链接期优化）。
+[profile.release.package."*"]
+opt-level = 3
