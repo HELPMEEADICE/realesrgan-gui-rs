@@ -23,7 +23,7 @@
 
 ## Вступ
 
-Ця програма використовує портативний виконуваний файл Real-ESRGAN ([Real-ESRGAN-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan)) для підвищення якості зображень з надзвичайно високою якістю. Вона написана на мові Python і надає зручний графічний інтерфейс за допомогою Tkinter.
+Ця програма використовує портативний виконуваний файл Real-ESRGAN ([Real-ESRGAN-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan)) для підвищення якості зображень з надзвичайно високою якістю. Вона написана на мові Rust і надає зручний графічний інтерфейс у стилі Fluent Design за допомогою [Slint](https://slint.dev/).
 
 Quick Start：
 
@@ -37,7 +37,7 @@ Quick Start：
 
 * Виконуваний файл та моделі Real-ESRGAN-ncnn-vulkan не містяться у файлах `realesrgan-gui-windows.7z` та `realesrgan-gui-ubuntu.tar.xz`. Їх необхідно завантажити вручну з [тут] (https://github.com/xinntao/Real-ESRGAN/releases) та розпакувати в каталог, де знаходиться виконуваний файл Real-ESRGAN GUI.
 * Артефакти в GitHub Actions побудовані на основі останніх коммітів Вони також не містять виконуваного файлу та моделей Real-ESRGAN-ncnn-vulkan.
-* Використовуйте Python 3.10 або новішої версії, якщо ви хочете запустити Real-ESRGAN GUI з коду. Не забудьте встановити залежності за допомогою `pip install -r requirements.txt` та розпакувати Real-ESRGAN-ncnn-vulkan до репозиторію перед запуском `python main.py`.
+* Real-ESRGAN GUI is written in Rust with [Slint](https://slint.dev/) since the Fluent Design rewrite. To run it from source you need Rust 1.82+: extract Real-ESRGAN-ncnn-vulkan into the repository and run `cargo run --release` (the built executable ends up in `target/release/`). See the "Build from source" section of [README.en-US.md](https://github.com/TransparentLC/realesrgan-gui/blob/master/README.en-US.md).
 * Можливо, Real-ESRGAN GUI можна запустити і в інших дистрибутивах Linux, але я не перевіряв.
 
 </details>
@@ -56,15 +56,13 @@ Quick Start：
 * Збільшення масштабу GIF-зображень
     * Розбиває анімований GIF на кадри і зчитує їх тривалість. Збільшує масштаб кадрів по одному, а потім об'єднує їх у збільшене анімоване GIF-зображення.
 * Підтримка перетягування
-    * Перетягуйте графічні файли або каталоги на графічний інтерфейс, і вхідний і вихідний шлях будуть встановлені автоматично.
+    * **Примітка:** після переходу на Slint перетягування файлів з операційної системи поки не підтримується, тому вхідний шлях потрібно вводити вручну або вибирати кнопкою «Огляд».
     * Вихідний шлях буде містити суфікс, такий як x4, w1280, h1080, залежно від обраного режиму зміни розміру.
 * Темна тема
-    * Виберіть світлу або темну тему відповідно до системних налаштувань.
-    * Виявлення здійснюється за допомогою [darkdetect] (https://github.com/albertosottile/darkdetect).
-    * Не доступно на macOS?
+    * Тему Fluent Design у Slint вибирає світлу або темну відповідно до системних налаштувань і реагує на їх зміну під час роботи.
 * Багатомовна підтримка
-    * Наразі підтримуються спрощена та традиційна китайська та англійська мови.
-    * Використовує `locale.getdefaultlocale` для визначення мови.
+    * Наразі підтримуються спрощена та традиційна китайська, англійська, українська, турецька, іспанська та французька мови.
+    * Мова інтерфейсу визначається за системним регіональним стандартом під час запуску.
     * За замовчуванням повертається до англійської мови, якщо перекладений текст відсутній.
     * Ви можете додавати або покращувати переклади, редагуючи [`i18n.ini`] (https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.ini). Внески дуже вітаються!
 
@@ -146,12 +144,11 @@ GIF-файли підтримують лише палітру до 256 коль�
 
 ## Використані бібліотеки з відкритим вихідним кодом
 
-* [Pillow](https://github.com/python-pillow/Pillow)
+* [Slint](https://slint.dev/)
+* [image](https://github.com/image-rs/image)
+* [webp](https://github.com/jaredforth/webp)
+* [rfd](https://github.com/PolyMeilex/rfd)
 * [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)
-* [Sun-Valley-ttk-theme](https://github.com/rdbende/Sun-Valley-ttk-theme)
-* [TkInterDnD2](https://github.com/pmgagne/tkinterdnd2)
-* [darkdetect](https://github.com/albertosottile/darkdetect)
-* [pyinstaller](https://github.com/pyinstaller/pyinstaller)
 
 ## Вклади
 

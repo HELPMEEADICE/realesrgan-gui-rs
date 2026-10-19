@@ -1,0 +1,452 @@
+import {
+    Button,
+    ComboBox,
+    LineEdit,
+    Palette,
+    ProgressIndicator,
+    SpinBox,
+    Switch,
+    TabWidget,
+    TextEdit,
+} from "std-widgets.slint";
+import { FieldLabel, RadioButton } from "components.slint";
+
+// All user visible strings live here. `src/app.rs` fills them in from i18n.ini
+// whenever the application language changes, the same way the Tkinter
+// implementation kept one `StringVar` per label.
+export global Strings {
+    in-out property <string> input-path-label;
+    in-out property <string> output-path-label;
+    in-out property <string> browse;
+    in-out property <string> used-model;
+    in-out property <string> resize-mode;
+    in-out property <string> resize-mode-ratio;
+    in-out property <string> resize-mode-width;
+    in-out property <string> resize-mode-height;
+    in-out property <string> resize-mode-longest-side;
+    in-out property <string> resize-mode-shortest-side;
+    in-out property <string> downsample-mode;
+    in-out property <string> tile-size;
+    in-out property <string> used-gpu-id;
+    in-out property <string> lossy-mode-quality;
+    in-out property <string> custom-command;
+    in-out property <string> prefer-webp;
+    in-out property <string> enable-tta;
+    in-out property <string> gif-optimize-transparency;
+    in-out property <string> enable-lossy-mode;
+    in-out property <string> enable-ignore-error;
+    in-out property <string> enable-preupscale;
+    in-out property <string> view-source;
+    in-out property <string> view-re-source;
+    in-out property <string> view-additional-model;
+    in-out property <string> view-donate-page;
+    in-out property <string> tab-basic;
+    in-out property <string> tab-advanced;
+    in-out property <string> tab-about;
+    in-out property <string> start-processing;
+    in-out property <string> pause-processing;
+    in-out property <string> continue-processing;
+}
+
+export component AppWindow inherits Window {
+    title: "Real-ESRGAN GUI";
+    icon: @image-url("../icon-128px.png");
+    // Slint rejects setting `width`/`height` together with `min-*`, so the
+    // initial size is expressed as the preferred size.
+    preferred-width: 720px;
+    preferred-height: 640px;
+    min-width: 640px;
+    min-height: 540px;
+    background: Palette.background;
+    default-font-family: root.ui-font-family;
+
+    // Filled in by the host so that CJK text picks a font that actually has the
+    // glyphs on every platform.
+    in property <string> ui-font-family: "Microsoft YaHei UI";
+
+    // Data provided by the host.
+    in property <[string]> models;
+    in property <[string]> languages;
+    in property <[string]> downsample-methods;
+    in property <[string]> tile-sizes;
+    in property <string> about-subtitle;
+    in property <bool> processing;
+    in property <bool> processing-paused;
+    in property <float> progress;
+    in property <string> log-text;
+
+    in-out property <int> current-tab: 0;
+    in-out property <string> input-path;
+    in-out property <string> output-path;
+    in-out property <bool> output-auto: false;
+    in-out property <int> resize-mode: 1;
+    in-out property <int> resize-ratio: 4;
+    in-out property <int> resize-width: 1024;
+    in-out property <int> resize-height: 1024;
+    in-out property <int> resize-longest-side: 1024;
+    in-out property <int> resize-shortest-side: 1024;
+    in-out property <int> model-index: 0;
+    in-out property <int> downsample-index: 0;
+    in-out property <int> tile-size-index: 0;
+    in-out property <int> gpu-id: -1;
+    in-out property <int> lossy-quality: 80;
+    in-out property <string> custom-command;
+    in-out property <bool> use-webp: false;
+    in-out property <bool> use-tta: false;
+    in-out property <bool> optimize-gif: false;
+    in-out property <bool> lossy-mode: false;
+    in-out property <bool> ignore-error: false;
+    in-out property <bool> preupscale: false;
+    in-out property <int> language-index: 0;
+    // Kept in sync from the host to keep the log pinned to the newest line.
+    in-out property <length> log-scroll: -999999px;
+
+    callback browse-input();
+    callback browse-output();
+    callback process-clicked();
+    callback open-url(string);
+    callback settings-changed();
+    callback language-changed(int);
+
+    changed language-index => { root.language-changed(root.language-index); }
+
+    // Any of these invalidates a derived output path.
+    changed resize-mode => { root.settings-changed(); }
+    changed resize-ratio => { root.settings-changed(); }
+    changed resize-width => { root.settings-changed(); }
+    changed resize-height => { root.settings-changed(); }
+    changed resize-longest-side => { root.settings-changed(); }
+    changed resize-shortest-side => { root.settings-changed(); }
+    changed model-index => { root.settings-changed(); }
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+
+        main-tabs := TabWidget {
+            current-index: root.current-tab;
+            vertical-stretch: 3;
+
+            Tab {
+                title: Strings.tab-basic;
+
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 6px;
+
+                    FieldLabel { text: Strings.input-path-label; }                    HorizontalLayout {
+                        spacing: 8px;
+                        LineEdit {
+                            text <=> root.input-path;
+                            horizontal-stretch: 1;
+                        }
+                        Button {
+                            text: Strings.browse;
+                            width: 84px;
+                            clicked => { root.browse-input(); }
+                        }
+                    }
+
+                    FieldLabel { text: Strings.output-path-label; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        LineEdit {
+                            text <=> root.output-path;
+                            horizontal-stretch: 1;
+                            edited => { root.output-auto = false; }
+                        }
+                        Button {
+                            text: Strings.browse;
+                            width: 84px;
+                            clicked => { root.browse-output(); }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 20px;
+                        alignment: start;
+
+                        VerticalLayout {
+                            width: 292px;
+                            horizontal-stretch: 0;
+                            spacing: 2px;
+
+                            FieldLabel { text: Strings.resize-mode; }
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                RadioButton {
+                                    text: Strings.resize-mode-ratio;
+                                    checked: root.resize-mode == 1;
+                                    clicked => { root.resize-mode = 1; }
+                                }
+                                SpinBox {
+                                    width: 132px;
+                                    horizontal-stretch: 0;
+                                    minimum: 2;
+                                    maximum: 16;
+                                    value <=> root.resize-ratio;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                RadioButton {
+                                    text: Strings.resize-mode-width;
+                                    checked: root.resize-mode == 2;
+                                    clicked => { root.resize-mode = 2; }
+                                }
+                                SpinBox {
+                                    width: 132px;
+                                    horizontal-stretch: 0;
+                                    minimum: 1;
+                                    maximum: 16383;
+                                    value <=> root.resize-width;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                RadioButton {
+                                    text: Strings.resize-mode-height;
+                                    checked: root.resize-mode == 3;
+                                    clicked => { root.resize-mode = 3; }
+                                }
+                                SpinBox {
+                                    width: 132px;
+                                    horizontal-stretch: 0;
+                                    minimum: 1;
+                                    maximum: 16383;
+                                    value <=> root.resize-height;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                RadioButton {
+                                    text: Strings.resize-mode-longest-side;
+                                    checked: root.resize-mode == 4;
+                                    clicked => { root.resize-mode = 4; }
+                                }
+                                SpinBox {
+                                    width: 132px;
+                                    horizontal-stretch: 0;
+                                    minimum: 1;
+                                    maximum: 16383;
+                                    value <=> root.resize-longest-side;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                RadioButton {
+                                    text: Strings.resize-mode-shortest-side;
+                                    checked: root.resize-mode == 5;
+                                    clicked => { root.resize-mode = 5; }
+                                }
+                                SpinBox {
+                                    width: 132px;
+                                    horizontal-stretch: 0;
+                                    minimum: 1;
+                                    maximum: 16383;
+                                    value <=> root.resize-shortest-side;
+                                }
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+
+                            FieldLabel { text: Strings.used-model; }
+                            ComboBox {
+                                model: root.models;
+                                current-index <=> root.model-index;
+                            }
+
+                            Rectangle { vertical-stretch: 1; }
+
+                            HorizontalLayout {
+                                alignment: end;
+                                Button {
+                                    text: root.processing
+                                        ? (root.processing-paused ? Strings.continue-processing : Strings.pause-processing)
+                                        : Strings.start-processing;
+                                    primary: !(root.processing && !root.processing-paused);
+                                    width: 88px;
+                                    clicked => { root.process-clicked(); }
+                                }
+                            }
+                        }
+                    }
+
+                    // A `VerticalLayout` spreads leftover height across all of its
+                    // children; this spacer absorbs it so the rows above keep
+                    // their natural Fluent size.
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Tab {
+                title: Strings.tab-advanced;
+
+                HorizontalLayout {
+                    padding: 12px;
+                    spacing: 20px;
+                    alignment: start;
+
+                    VerticalLayout {
+                        width: 292px;
+                        horizontal-stretch: 0;
+                        spacing: 6px;
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                FieldLabel { text: Strings.downsample-mode; }
+                                ComboBox {
+                                    model: root.downsample-methods;
+                                    current-index <=> root.downsample-index;
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                FieldLabel { text: Strings.tile-size; }
+                                ComboBox {
+                                    model: root.tile-sizes;
+                                    current-index <=> root.tile-size-index;
+                                }
+                            }
+                        }
+
+                        FieldLabel { text: Strings.used-gpu-id; }
+                        SpinBox {
+                            minimum: -1;
+                            maximum: 7;
+                            value <=> root.gpu-id;
+                        }
+
+                        FieldLabel { text: Strings.lossy-mode-quality; }
+                        SpinBox {
+                            minimum: 0;
+                            maximum: 100;
+                            step-size: 5;
+                            value <=> root.lossy-quality;
+                        }
+
+                        FieldLabel { text: Strings.custom-command; }
+                        LineEdit { text <=> root.custom-command; }
+
+                        Rectangle { vertical-stretch: 1; }
+                    }
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 6px;
+
+                        Switch { text: Strings.prefer-webp; checked <=> root.use-webp; }
+                        Switch { text: Strings.enable-tta; checked <=> root.use-tta; }
+                        Switch { text: Strings.gif-optimize-transparency; checked <=> root.optimize-gif; }
+                        Switch { text: Strings.enable-lossy-mode; checked <=> root.lossy-mode; }
+                        Switch { text: Strings.enable-ignore-error; checked <=> root.ignore-error; }
+                        Switch { text: Strings.enable-preupscale; checked <=> root.preupscale; }
+
+                        ComboBox {
+                            model: root.languages;
+                            current-index <=> root.language-index;
+                        }
+
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+            }
+
+            Tab {
+                title: Strings.tab-about;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 6px;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Image {
+                            source: @image-url("../icon-128px.png");
+                            width: 128px;
+                            height: 128px;
+                        }
+                    }
+
+                    Text {
+                        text: "Real-ESRGAN GUI";
+                        font-size: 22px;
+                        horizontal-alignment: center;
+                        color: Palette.foreground;
+                    }
+                    Text {
+                        text: root.about-subtitle;
+                        horizontal-alignment: center;
+                        color: Palette.foreground;
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        GridLayout {
+                            spacing: 8px;
+                            Button {
+                                text: Strings.view-source;
+                                row: 0;
+                                col: 0;
+                                clicked => { root.open-url("https://github.com/TransparentLC/realesrgan-gui"); }
+                            }
+                            Button {
+                                text: Strings.view-re-source;
+                                row: 0;
+                                col: 1;
+                                clicked => { root.open-url("https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan"); }
+                            }
+                            Button {
+                                text: Strings.view-additional-model;
+                                row: 1;
+                                col: 0;
+                                clicked => { root.open-url("https://github.com/TransparentLC/realesrgan-gui/releases/tag/additional-models"); }
+                            }
+                            Button {
+                                text: Strings.view-donate-page;
+                                row: 1;
+                                col: 1;
+                                clicked => { root.open-url("https://i.akarin.dev/donate/"); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            background: Palette.alternate-background;
+            border-width: 1px;
+            border-color: Palette.border;
+            border-radius: 4px;
+            vertical-stretch: 1;
+            min-height: 120px;
+
+            output-log := TextEdit {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                text: root.log-text;
+                read-only: true;
+                wrap: no-wrap;
+                font-family: "Consolas";
+                font-size: 12px;
+                content-y <=> root.log-scroll;
+            }
+        }
+
+        ProgressIndicator {
+            progress: root.progress;
+            vertical-stretch: 0;
+        }
+    }
+}

@@ -23,7 +23,7 @@ A cross-platform GUI for image upscaler [Real-ESRGAN](https://github.com/xinntao
 
 ## Introduction
 
-This application uses Real-ESRGAN's portable executable file ([Real-ESRGAN-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan)) to upscale images with extremely high quality. It is written in Python and provides an user-friendly GUI with Tkinter.
+This application uses Real-ESRGAN's portable executable file ([Real-ESRGAN-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan)) to upscale images with extremely high quality. It is written in Rust and provides an user-friendly Fluent Design GUI with [Slint](https://slint.dev/).
 
 Quick Start：
 
@@ -45,31 +45,33 @@ Quick Start：
 
 * Real-ESRGAN-ncnn-vulkan's executable file and models are not contained in  `realesrgan-gui-windows.7z` and `realesrgan-gui-ubuntu.tar.xz`. You have to download manually from [here](https://github.com/xinntao/Real-ESRGAN/releases) and extract them to the directory where Real-ESRGAN GUI's executable file is located.
 * The artifacts in GitHub Actions are built based on the latest commits. They don't contain Real-ESRGAN-ncnn-vulkan's executable file and models either.
-* Use Python 3.10 or above if you want to run Real-ESRGAN GUI from source. Don't forget to install the dependcies by `pip install -r requirements.txt` and extract Real-ESRGAN-ncnn-vulkan to the repository before running `python main.py`.
+* Use Rust 1.82 or above if you want to run Real-ESRGAN GUI from source. Don't forget to extract Real-ESRGAN-ncnn-vulkan to the repository before running `cargo run --release`; the built executable ends up in `target/release/`.
 * It may be possible to run Real-ESRGAN GUI in other Linux distributions, but I have not tested it.
 
 </details>
 
 Please check out [CONTRIBUTING.md](https://github.com/TransparentLC/realesrgan-gui/blob/master/CONTRIBUTING.md) if you would like to contribute to Real-ESRGAN GUI.
 
-### Build `Real-ESRGAN GUI.app` for Apple Silicon (`arm64`)
+### Build from source
 
-The `arm64` builds have been tested to perform better than `universal2` builds. If you are using Apple Silicon, it is recommended that you can make an `arm64` build by yourself.
+You need [Rust](https://rustup.rs/) 1.82 or above.
 
 ```shell
-# 1. Clone this repository.
-git clone https://github.com/TransparentLC/realesrgan-gui.git
-cd realesrgan-gui
+# Run a debug build
+cargo run
 
-# 2. Run the shell script to start building. Since the latest commit of this project requires tk version 8.6, while Python 3.10 bundles tk version 8.5, the local packaging must be done in Python 3.11 environment. Before packaging, enter python3 -V in the terminal to confirm the current version is 3.11.
-# Password is required for "sudo pyinstaller realesrgan-gui-macOS-arm64.spec"
-sh Build-macOS-arm64.sh
-
-# 3. The built application is saved in "./realesrgan-gui/dist/Real-ESRGAN GUI.app".
+# Release build, the executable ends up in target/release/
+cargo build --release
 ```
 
-> [!WARNING]
-> Since I don't have any device running macOS, I may not be able to handle macOS-related issues.
+The first build downloads the dependencies (Slint, image, rfd, libwebp, …) and therefore needs network access. On Linux you also need the system libraries Slint / winit rely on, such as `libxkbcommon`, `libwayland-client`, `fontconfig` and the OpenGL development packages.
+
+To ship the application, put `target/release/realesrgan-gui[.exe]` next to Real-ESRGAN-ncnn-vulkan's executable and models. The translations are embedded into the executable, so `i18n.ini` does not have to be shipped separately.
+
+Set the `REGUI_BUILD_TIME` environment variable at build time (an already formatted date string such as `2024-06-02 14:06:22`) if you want the About tab to show the build time.
+
+> [!NOTE]
+> Building a macOS `.app` bundle requires providing your own `Info.plist` and icon; this project no longer ships the Tk packaging scripts.
 
 ### Related projects
 
@@ -91,16 +93,13 @@ In addition to the features supported by Real-ESRGAN-ncnn-vulkan, Real-ESRGAN GU
     * Drag and drop image files or directories onto the GUI and the input and output path will be set automatically.
     * The output path will contain a suffix like x4, w1280, h1080 based on the chosen resize mode.
 * Dark theme
-    * Choose to use light or dark theme according to system settings.
-    * The detection is done using [darkdetect](https://github.com/albertosottile/darkdetect).
-    * Not available on macOS?
+    * Slint's Fluent Design style picks the light or dark theme according to the system settings, and follows changes while the application is running.
 * Multi-language support
-    * Simplified and traditional Chinese and English are currently supported.
-    * Uses `locale.getdefaultlocale` for language detection.
+    * Simplified and traditional Chinese, English, Ukrainian, Turkish, Spanish and French are currently supported.
+    * The interface language follows the system locale on start-up.
     * Fallback to English by default if translated text is missing.
     * You can add or improve translations by editing [`i18n.ini`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.ini). Contributions are very welcome!
-        * After adding your language to [`i18n.ini`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.ini), run the [`generate_locales_map.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/generate_locales_map.py) file and copy the `locales_map` variable from the output until the end. Then, replace the variable in [`i18n.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.py) with the one you copied. If you encounter any issues running [`generate_locales_map.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/generate_locales_map.py), try running `pip install -r requirements.txt` in the command line to install the necessary dependencies, and then try again.
-        * If you don't want to deal with [`generate_locales_map.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/generate_locales_map.py), you can directly add your language code and the visible name of your language to the `locales_map` variable in the [`i18n.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.py) file.
+        * After adding a section for your language to [`i18n.ini`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.ini), also add the "visible language name → language code" pair to `LOCALES_MAP` in [`src/i18n.rs`](https://github.com/TransparentLC/realesrgan-gui/blob/master/src/i18n.rs). Both lists must stay in the same order.
 
 ## Samples
 
@@ -172,11 +171,11 @@ This option is experimental and it is recommended to enable it only when upscali
 
 ### About lossy compression, compression quality and custom compression/post-processing command
 
-If lossy compression is enabled and the output format is JPEG or WebP, you can control the compression quality of the output image to the set value. If the input is a directory, the output compression quality will also be affected by this option when upscaling JPEG or WebP images in the directory. The compression is done using Pillow.
+If lossy compression is enabled and the output format is JPEG or WebP, you can control the compression quality of the output image to the set value. If the input is a directory, the output compression quality will also be affected by this option when upscaling JPEG or WebP images in the directory. The compression is done with the `image` crate and libwebp.
 
 If this option is not turned on, lossless compression is used when the output is in WebP format.
 
-If custom compression/post-processing command is set, the Pillow's compression will not be performed. You can set a command to compress the upscaled image or do other processing with it.
+If a custom compression/post-processing command is set, the built-in compression will not be performed. You can set a command to compress the upscaled image or do other processing with it.
 
 * `{input}` represents the path of the input file.
 * `{output}` represents the path of the output file.
@@ -239,12 +238,11 @@ However, I like the Material Design used by tsukumijima/Real-ESRGAN-GUI. It also
 
 ## Open-source libraries used
 
-* [Pillow](https://github.com/python-pillow/Pillow)
+* [Slint](https://slint.dev/) cross-platform GUI toolkit, using its built-in Fluent Design widget style
+* [image](https://github.com/image-rs/image) image decoding, encoding and scaling
+* [webp](https://github.com/jaredforth/webp) libwebp bindings used for lossy WebP encoding
+* [rfd](https://github.com/PolyMeilex/rfd) native file dialogs
 * [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)
-* [Sun-Valley-ttk-theme](https://github.com/rdbende/Sun-Valley-ttk-theme)
-* [TkInterDnD2](https://github.com/pmgagne/tkinterdnd2)
-* [darkdetect](https://github.com/albertosottile/darkdetect)
-* [pyinstaller](https://github.com/pyinstaller/pyinstaller)
 
 ## Credits
 

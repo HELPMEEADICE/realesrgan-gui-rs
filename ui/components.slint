@@ -1,0 +1,80 @@
+// Small Fluent-flavoured building blocks that the std-widgets styles do not
+// provide, or that need a different composition than the built-in widgets.
+
+import { Palette } from "std-widgets.slint";
+
+// A Fluent radio button. The built-in `RadioGroup` forces its children into a
+// grid of plain radio buttons, but the basic settings tab needs a spin box next
+// to every radio button, so the selection is driven by the caller instead.
+export component RadioButton {
+    in property <string> text;
+    in property <bool> checked: false;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    height: 34px;
+    min-width: 96px;
+    horizontal-stretch: 1;
+
+    accessible-role: radio-button;
+    accessible-label: root.text;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if (root.enabled) {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 4px;
+        padding-right: 4px;
+        spacing: 8px;
+
+        VerticalLayout {
+            alignment: center;
+
+            ring := Rectangle {
+                width: 20px;
+                height: self.width;
+                border-radius: self.width / 2;
+                border-width: root.checked ? 6px : 1px;
+                border-color: root.checked
+                    ? (root.enabled ? Palette.accent-background : Palette.border)
+                    : (touch.has-hover && root.enabled ? Palette.foreground : Palette.border);
+                background: Palette.control-background;
+
+                animate border-width, border-color { duration: 120ms; }
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: root.enabled ? Palette.control-foreground : Palette.border;
+            vertical-alignment: center;
+            horizontal-alignment: left;
+            wrap: no-wrap;
+            overflow: elide;
+            accessible-role: none;
+        }
+    }
+
+    touch := TouchArea {
+        enabled <=> root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A field label plus the widget below it, which is the repeating pattern of
+// both configuration tabs.
+export component FieldLabel inherits Text {
+    color: Palette.foreground;
+    vertical-alignment: center;
+    horizontal-alignment: left;
+    wrap: no-wrap;
+    overflow: elide;
+    accessible-role: none;
+}

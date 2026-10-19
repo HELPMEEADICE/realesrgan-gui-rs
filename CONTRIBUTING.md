@@ -86,15 +86,17 @@ ToastCompletedMessage = The files have been saved to: {0}
 
 `{0}` 和 `{1:.03f}` 这样的部分是格式化字符串的标识符（replacement fields），需要保留。在翻译缺失的情况将回退到英语。
 
-然后，你需要执行 [`generate_locales_map.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/generate_locales_map.py)（需要另外安装依赖 `babel`）生成所有语言的可见名称，填写到 [`i18n.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.py) 用于在 GUI 中选择语言：
+然后，你需要把语言的可见名称和语言代码的对应关系补充到 [`src/i18n.rs`](https://github.com/TransparentLC/realesrgan-gui/blob/master/src/i18n.rs) 的 `LOCALES_MAP` 中，用于在 GUI 的「高级设定」中切换语言：
 
-```py
-locales_map = {
-    '中文 (简体, 中国)': 'zh_CN',
-    'English (United States)': 'en_US',
+```rust
+pub const LOCALES_MAP: [(&str, &str); 14] = [
+    ("中文 (简体, 中国)", "zh_CN"),
+    ("English (United States)", "en_US"),
     ...
-}
+];
 ```
+
+`LOCALES_MAP` 的顺序需要和 `i18n.ini` 中各个语言段出现的顺序保持一致，语言下拉框中显示的就是这里的可见名称。可见名称可以直接参考 [Babel](https://github.com/python-babel/babel) 的 [`LOCALE_ALIASES`](https://github.com/python-babel/babel/blob/master/babel/locale-data/root.dat) 或操作系统的语言列表。
 
 # Contributing
 
@@ -182,12 +184,14 @@ ToastCompletedMessage = The files have been saved to: {0}
 
 String replacement fields like `{0}` and `{1:.03f}` should be preserved. Fallback to English by default if translated text is missing.
 
-After the translation is completed, run [`generate_locales_map.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/generate_locales_map.py) (requires installing the `babel` package) to generate code of the `locales_map` variable including visible names of translated languages and replace the code in [`i18n.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.py).
+After the translation is completed, add the visible language name and its language code to `LOCALES_MAP` in [`src/i18n.rs`](https://github.com/TransparentLC/realesrgan-gui/blob/master/src/i18n.rs) so that the language shows up in the "Advanced" tab:
 
-```py
-locales_map = {
-    '中文 (简体, 中国)': 'zh_CN',
-    'English (United States)': 'en_US',
+```rust
+pub const LOCALES_MAP: [(&str, &str); 14] = [
+    ("中文 (简体, 中国)", "zh_CN"),
+    ("English (United States)", "en_US"),
     ...
-}
+];
 ```
+
+`LOCALES_MAP` must stay in the same order as the language sections in `i18n.ini`, and the visible names are what the language combo box displays. For the visible names you can refer to [Babel](https://github.com/python-babel/babel) or the language list of your operating system.

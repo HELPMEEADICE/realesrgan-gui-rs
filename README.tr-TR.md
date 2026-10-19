@@ -23,7 +23,7 @@
 
 ## Giriş
 
-Bu uygulama, Real-ESRGAN'ın taşınabilir çalıştırılabilir dosyası olan [Real-ESRGAN-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan)'ı kullanarak sağlanan resmi son derece yüksek kalitelere çıkartır. Python dili ile yazılmıştır ve Tkinter ile kullanıcı dostu bir arayüz sunar.
+Bu uygulama, Real-ESRGAN'ın taşınabilir çalıştırılabilir dosyası olan [Real-ESRGAN-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan)'ı kullanarak sağlanan resmi son derece yüksek kalitelere çıkartır. Rust dili ile yazılmıştır ve [Slint](https://slint.dev/) ile Fluent Design tarzında kullanıcı dostu bir arayüz sunar.
 
 Hızlı başlangıç:
 
@@ -42,31 +42,31 @@ Hızlı başlangıç:
 
 * Real-ESRGAN-ncnn-vulkan'ın çalıştırılaiblir dosyası ve modelleri, `realesrgan-gui-windows.7z` içinde bulunmadığından [buradan](https://github.com/xinntao/Real-ESRGAN/releases) manuel olarak indirip Real-ESRGAN GUI ile aynı klasör içerisine koymanız gerekmektedir.
 * GitHub Actions'daki ögeler, son git commit'lerine dayanır, dolayısıyla Real-ESRGAN-ncnn-vulkan'ın çalıştırılabilir dosyasını ve modellerini içermez.
-* Real-ESRGAN GUI'yi kaynak koddan çalıştırmak isterseniz Python 3.10 veya daha üst bir sürüm kullanmanız gerekmekte. Ayrıca `python main.py` komutunu yürütmeden önce Real-ESRGAN-ncnn-vulkan'ı klasöre çıkarmayı ve `pip install -r requirements.txt` ile de GUI'nin gereksinimlerini yüklemeyi unutmayın.
+* Real-ESRGAN GUI, Fluent Design yeniden yazımından bu yana Rust ve [Slint](https://slint.dev/) ile geliştirilmektedir. Kaynak koddan çalıştırmak için Rust 1.82+ gerekir: Real-ESRGAN-ncnn-vulkan'ı klasöre çıkarın ve `cargo run --release` komutunu çalıştırın (derlenen çalıştırılabilir dosya `target/release/` içinde olur). Ayrıntılar için [README.en-US.md](https://github.com/TransparentLC/realesrgan-gui/blob/master/README.en-US.md) dosyasındaki "Build from source" bölümüne bakın.
 * Real-ESRGAN GUI'yi farklı Linux dağıtımlarında da çalıştırmak mümkün olabilir ancak bu test edilmemiştir.
 
 </details>
 
 Real-ESRGAN GUI'ye katkı yapmayı düşünüyorsanız lütfen [CONTRIBUTING.md](https://github.com/TransparentLC/realesrgan-gui/blob/master/CONTRIBUTING.md) dosyasına göz atın.
 
-### Apple Silicon (`arm64`) için `Real-ESRGAN GUI.app` Derleme
+### Kaynak koddan derleme
 
-`arm64` derlemelerinin `universal2` derlemelerinden daha iyi performans gösterdiği test edilmiştir. Eğer Apple Silicon kullanıyorsanız kendinizin bir arm64 derlemesi yapmanız önerilir.
+Rust 1.82 veya üzeri bir sürüm gerekir.
 
 ```shell
-# 1. Bu depoyu klonlayın.
-git clone https://github.com/TransparentLC/realesrgan-gui.git
-cd realesrgan-gui
+# Hata ayıklama derlemesi
+cargo run
 
-# 2. Paketlemeyi başlatmak için komut satırı betiğini başlatın. Projenin son sürümü tk sürüm 8.6 gerektirirken Python 3.10 ise tk sürüm 8.5 ile gelir, dolayısıyla paketleme işlemi Python3.11 içeren ortamdan yapılmalıdır. Paketlemeyi başlatmadan önce terminale `python3 -V` yazarak mevcut sürümün Python 3.11 olduğundan emin olun.
-# "sudo pyinstaller realesrgan-gui-macOS-arm64.spec" için şifreniz gerekecektir.
-sh Build-macOS-arm64.sh
-
-# 3. Paketlenen uygulama "./realesrgan-gui/dist/Real-ESRGAN GUI.app" konumuna kaydedilecektir.
+# Sürüm derlemesi, çalıştırılabilir dosya target/release/ içinde olur
+cargo build --release
 ```
 
+İlk derleme bağımlılıkları (Slint, image, rfd, libwebp …) indirdiği için internet bağlantısı gerektirir. Linux'ta ayrıca Slint / winit'in ihtiyaç duyduğu sistem kütüphaneleri gerekir: `libxkbcommon`, `libwayland-client`, `fontconfig` ve OpenGL geliştirme paketleri.
+
+Uygulamayı dağıtmak için `target/release/realesrgan-gui[.exe]` dosyasını Real-ESRGAN-ncnn-vulkan'ın çalıştırılabilir dosyası ve modelleriyle aynı klasöre koyun. Çeviriler çalıştırılabilir dosyanın içine gömülüdür, bu yüzden `i18n.ini` ayrıca dağıtılmasına gerek yoktur.
+
 > [!WARNING]
-> ⚠️ macOS kullanan herhangi bir cihazım olmadığından macOS ile ilişkili sorunları çözemeyebilirim.
+> macOS için `.app` paketi oluşturmak isterseniz `Info.plist` ve simgeyi kendiniz sağlamanız gerekir; bu proje artık Tk paketleme betiklerini içermiyor.
 
 * Real-ESRGAN'ı Android'de kullanın: [tumuyan/RealSR-NCNN-Android](https://github.com/tumuyan/RealSR-NCNN-Android)
 * Real-ESRGAN ve Vapoursynth'le video kalitesini artırın: [HolyWu/vs-realesrgan](https://github.com/HolyWu/vs-realesrgan)
@@ -86,16 +86,13 @@ Real-ESRGAN-GUI, Real-ESRGAN-ncnn-vulkan'da halihazırda bulunanlar haricinde a�
     * Görselleri veya görselleri içeren klasörleri arayüze sürüklediğinizde giriş ve çıkış dosya yolları otomatik olarak ayarlanır.
     * Çıkış dosya yolu, seçilen boyutlandırma moduna göre x4, w1280, h1080 gibi ekler içerir.
 * Karanlık Tema
-    * Sisteminizin ayarlarına göre aydınlık veya karanlık tema seçilir.
-    * Tema seçimi, [darkdetect](https://github.com/albertosottile/darkdetect) ile yapılır.
-    * macOS için mevcut değildir?
+    * Slint'in Fluent Design teması, sistem ayarlarına göre aydınlık veya karanlık temayı seçer ve çalışma sırasında yapılan değişiklikleri izler.
 * Çoklu dil desteği
-    * Mevcut olarak basitleştirilmiş ve geleneksel Çince, İngilizce, Ukraynaca ve Türkçe desteklenmektedir.
-    * Dil seçimi için `locale.getdefaultlocale` kullanılır.
+    * Mevcut olarak basitleştirilmiş ve geleneksel Çince, İngilizce, Ukraynaca, Türkçe, İspanyolca ve Fransızca desteklenmektedir.
+    * Arayüz dili başlangıçta sistem yerel ayarına göre belirlenir.
     * Eğer sistem dilinde çeviri mevcut değilse otomatik olarak İngilizce seçilir.
     * [`i18n.ini`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.ini) dosyasını düzenleyerek çevirinizi ekleyebilir veya var olan çevirileri geliştirebilirsiniz. Her türlü katkınıza açığız!
-        * Dilinizi [`i18n.ini`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.ini)'ye ekledikten sonra [`generate_locales_map.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/generate_locales_map.py) dosyasını çalıştırarak sağlanan çıktıdaki `locales_map` değişkeini sonuna kadar kopyalayın. Daha sonra kopyaladığınız değişkeni [`i18n.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.py) dosyasındakiyle değiştirin. Eğer [`generate_locales_map.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/generate_locales_map.py) çalıştırmakta sıkıntı yaşadıysanız komut satırında `pip install -r requirements.txt` yaparak gereksinimleri yükledikten sonra tekrar deneyin.
-        * Eğer [`generate_locales_map.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/generate_locales_map.py) ile uğraşmak istemiyorsanız dil kodunuzu ve dilinizin görünürdeki ismini doğrudan [`i18n.py`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.py) dosyasının içindeki `locales_map` değişkenine kendi dilinizi ekleyebilirsiniz.
+        * Diliniz için [`i18n.ini`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.ini) dosyasına bir bölüm ekledikten sonra [`src/i18n.rs`](https://github.com/TransparentLC/realesrgan-gui/blob/master/src/i18n.rs) dosyasındaki `LOCALES_MAP` listesine "görünen dil adı → dil kodu" eşlemesini de ekleyin. İki listenin sırası aynı olmalıdır.
 
 ## Örnekler
 
@@ -167,11 +164,11 @@ Bu ayar deneyseldir ve sadece şeffaflık içeren GIF'ler için kullanılması t
 
 ### Kayıplı sıkıştırma, sıkıştırma kalitesi ve özel sıkıştırma/son-işleme komutları hakkında
 
-Eğer kayıplı sıkıştırma etkinse ve çıkış görseli formatı JPEG veya WebP'yse çıkış görsellerinin sıkıştırma kalitesini ayarlayabilirsiniz. Eğer uygulamaya görselleri içeren bir klasörün yolunu girdi olarak verdiyseniz bu ayar, belirtilen klasördeki JPEG ve WebP görsellerinin boyutunu yükseltirken kullanılacaktır. Bahsedilen sıkıştırma, Pillow ile yapılır.
+Eğer kayıplı sıkıştırma etkinse ve çıkış görseli formatı JPEG veya WebP'yse çıkış görsellerinin sıkıştırma kalitesini ayarlayabilirsiniz. Eğer uygulamaya görselleri içeren bir klasörün yolunu girdi olarak verdiyseniz bu ayar, belirtilen klasördeki JPEG ve WebP görsellerinin boyutunu yükseltirken kullanılacaktır. Bahsedilen sıkıştırma, `image` crate ve libwebp ile yapılır.
 
 Bu ayar aktif değilse çıkış formatı WebP olduğu takdirde kayıpsız sıkıştırma kullanılır.
 
-Eğer özel sıkıştırma/son-işleme komutu belirttiyseniz Pillow'un sıkıştırması uygulanmayacaktır. Boyutu yükseltilen görselleri sıkıştırmak veya görsellerle başka şeyler yapmak isterseniz özel bir komut yazabilirsiniz.
+Eğer özel sıkıştırma/son-işleme komutu belirttiyseniz yerleşik sıkıştırma uygulanmayacaktır. Boyutu yükseltilen görselleri sıkıştırmak veya görsellerle başka şeyler yapmak isterseniz özel bir komut yazabilirsiniz.
 
 * `{input}` giriş dosyasının yolunu temsil eder.
 * `{output}` çıkış dosyasının yolunu temsil eder.
@@ -224,12 +221,11 @@ Ancak tsukumijima/Real-ESRGAN-GUI'nin tasarımını sevdiğimi belirtmek isterim
 
 ### Kullanılan açık kaynaklı kütüphaneler
 
-* [Pillow](https://github.com/python-pillow/Pillow)
+* [Slint](https://slint.dev/)
+* [image](https://github.com/image-rs/image)
+* [webp](https://github.com/jaredforth/webp)
+* [rfd](https://github.com/PolyMeilex/rfd)
 * [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)
-* [Sun-Valley-ttk-theme](https://github.com/rdbende/Sun-Valley-ttk-theme)
-* [TkInterDnD2](https://github.com/pmgagne/tkinterdnd2)
-* [darkdetect](https://github.com/albertosottile/darkdetect)
-* [pyinstaller](https://github.com/pyinstaller/pyinstaller)
 
 ## Katkıda bulunanlar
 

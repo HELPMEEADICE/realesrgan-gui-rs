@@ -23,7 +23,10 @@
 
 ## 基本介绍
 
-这个程序是 Real-ESRGAN 的命令行程序 [Real-ESRGAN-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan) 的图形界面，使用 Python 和 tkinter 编写，同时支持 Windows、Ubuntu 和 macOS 平台。
+这个程序是 Real-ESRGAN 的命令行程序 [Real-ESRGAN-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan) 的图形界面，使用 [Rust](https://www.rust-lang.org/) 和 [Slint](https://slint.dev/) 编写，界面为 Fluent Design 风格，同时支持 Windows、Ubuntu 和 macOS 平台。
+
+> [!NOTE]
+> 本项目原先使用 Python 和 tkinter（Sun-Valley 主题）实现，现已完全重构为 Rust + Slint，Python 版本的代码已删除。原有的配置格式（`config.ini`）和翻译文件（`i18n.ini`）保持兼容。
 
 快速上手：
 
@@ -45,29 +48,33 @@
 
 * Release 中的 `realesrgan-gui-windows.7z` 和 `realesrgan-gui-ubuntu.tar.xz` 不包含 Real-ESRGAN-ncnn-vulkan 的主程序和官方模型，请自行在[这里](https://github.com/xinntao/Real-ESRGAN/releases)下载后解压到 GUI 的主程序所在的目录。
 * Actions 中上传的是根据最新提交的代码打包的版本（相当于 Nightly），同样不包含 Real-ESRGAN-ncnn-vulkan 的主程序和官方模型。
-* 如果需要从源代码运行，请使用 Python 3.10 或以上版本，执行 `pip install -r requirements.txt` 安装依赖，将 Real-ESRGAN-ncnn-vulkan 解压到项目目录，然后执行 `main.py`。
+* 如果需要从源代码运行，请安装 [Rust](https://rustup.rs/) 1.82 或以上版本，将 Real-ESRGAN-ncnn-vulkan 解压到项目目录，然后执行 `cargo run --release`，编译生成的可执行文件位于 `target/release/`。
 * 在其它的 Linux 发行版中可能也可以运行本项目，不过我没有进行测试。
 
 </details>
 
 如果你想要贡献 Real-ESRGAN GUI，请查看 [CONTRIBUTING.md](https://github.com/TransparentLC/realesrgan-gui/blob/master/CONTRIBUTING.md)。
 
-### 一键打包 `arm64` 或 `x86_64` 单架构的 `Real-ESRGAN GUI.app`
+### 从源代码构建
 
-经实测，`arm64` 单架构比 `universal2` 双架构在 Apple 芯片 Mac 上的性能表现要更加出色，因此建议 Apple 芯片用户自行打包 `arm64` 单架构应用程序。
-另外，`x86_64` 单架构虽然在性能上与 `universal2` 双架构相同，但应用体积更小。
+需要 [Rust](https://rustup.rs/) 1.82 或以上版本。
 
-1. 准备一台 Mac 设备，`intel` 芯片设备上打包得到`x86_64` 单架构应用，`apple` 芯片设备上打包得到`arm64` 单架构应用。
-2. 本项目最新commit的tk版本要求8.6，而Python 3.10自带tk版本是8.5，因此本地打包必须在`Python 3.11`环境下，打包前在终端输入`python3 -V`确认当前版本是否3.11
-3. 如果是通过brew安装python, 需要额外安装`brew install python-tk`
-4. 打开终端，在终端内运行下面的一键打包脚本命令，运行到 `pyinstaller` 打包环节，`sudo` 命令需要输入开机密码。
 ```shell
-curl -L https://raw.githubusercontent.com/TransparentLC/realesrgan-gui/master/macos-build-script.sh | bash
-```
-打包好的应用在“下载”文件夹内，请手动拖拽应用到“应用程序”文件夹完成安装。
+# 调试运行
+cargo run
 
-> [!WARNING]
-> 由于我没有运行 macOS 的设备，因此可能无法处理和 macOS 相关的使用问题。
+# 发布构建，可执行文件位于 target/release/
+cargo build --release
+```
+
+首次构建需要联网下载依赖（Slint、image、rfd、libwebp 等）。在 Linux 上还需要安装 Slint / winit 所需的系统库，例如 `libxkbcommon`、`libwayland-client`、`fontconfig` 和 OpenGL 相关的开发包。
+
+发布时把 `target/release/realesrgan-gui[.exe]` 和 Real-ESRGAN-ncnn-vulkan 的主程序、模型放在同一目录即可。翻译文件已经内嵌在可执行文件中，不需要额外附带 `i18n.ini`。
+
+如果需要让「关于」页面显示构建时间，可以在构建时设置 `REGUI_BUILD_TIME` 环境变量（已格式化的时间字符串，例如 `2024-06-02 14:06:22`）。
+
+> [!NOTE]
+> 在 macOS 上构建为 `.app` 时，需要自行准备 `Info.plist` 和图标；本项目不再附带 Tk 版本的打包脚本。
 
 ### 相关项目
 
@@ -86,16 +93,16 @@ curl -L https://raw.githubusercontent.com/TransparentLC/realesrgan-gui/master/ma
 * 对 GIF 的处理
     * 将 GIF 的各个帧拆分出来并记录时长，逐个放大后再进行合并。
 * 拖拽支持
-    * 将图片文件或目录拖拽到窗口的任意位置上，即可自动将它的路径设定为输入和输出路径。
+    * 拖拽文件或目录到窗口设定输入和输出路径
+    * **注意：** 重构为 Slint 后暂时无法接收操作系统层面的文件拖放，详见[已知限制](#已知限制)。
     * 根据拖拽时选择的放大尺寸计算方式，在输出路径中会自动添加形如 x4、w1280、h1080 的后缀。
 * 深色模式界面
-    * 使用 [darkdetect](https://github.com/albertosottile/darkdetect) 实现。
-    * 在启动时根据系统设定选择使用浅色或深色模式界面，支持在修改系统设定时自动切换。
-    * 在 macOS 上不适用（？）
+    * 由 Slint 的 Fluent Design 主题根据系统设定自动选择浅色或深色模式。
 * 多语言支持
-    * 界面语言和系统语言（使用 `locale.getdefaultlocale` 获取）一致。
-    * 目前支持简繁中文和英语。在缺少某个语言的翻译文本的情况下，默认会回退到英语。
+    * 界面语言和系统语言一致（启动时通过系统区域设置判断）。
+    * 目前支持简繁中文、英语、乌克兰语、土耳其语、西班牙语和法语。在缺少某个语言的翻译文本的情况下，默认会回退到英语。
     * **欢迎添加更多语言的翻译，或对现有的翻译进行改进～**（参见 [`i18n.ini`](https://github.com/TransparentLC/realesrgan-gui/blob/master/i18n.ini)）
+    * 新增语言时，除了在 `i18n.ini` 中添加对应的翻译段，还需要在 [`src/i18n.rs`](https://github.com/TransparentLC/realesrgan-gui/blob/master/src/i18n.rs) 的 `LOCALES_MAP` 中补充「语言显示名称 → 语言代码」的映射（两者顺序需保持一致）。
 
 ## 效果对比
 
@@ -163,11 +170,11 @@ GIF 只支持最多 256 种 RGB 颜色的调色板并设定其中一种颜色为
 * 在拆出 GIF 的每一帧时，强制把透明部分的颜色设为白色，这样可以将放大后的 GIF 的杂边颜色固定为白色，比较美观。
 * 对于每一帧的 Alpha 通道，先添加半径 3px 的高斯模糊以平滑锯齿，然后应用一个增加对比度的曲线（或者是 LUT）以尽可能减小杂边的影响，再通过仿色算法处理为只有 0 和 255 两个值的黑白图像。
 
-这个选项是实验性的，建议在放大存在透明部分的 GIF 时手动开启，在放大不存在透明部分的 GIF 时关闭。可能是由于这里的实现或 Pillow 对 GIF 的处理存在问题，在开启时处理后者会出现一些奇怪的问题（主要是出现不该出现的透明色以及仿色效果非常差）。也许会有更好的处理方法。
+这个选项是实验性的，建议在放大存在透明部分的 GIF 时手动开启，在放大不存在透明部分的 GIF 时关闭。可能是由于这里的实现或 GIF 编码器对透明色的处理存在问题，在开启时处理后者会出现一些奇怪的问题（主要是出现不该出现的透明色以及仿色效果非常差）。也许会有更好的处理方法。
 
 ### 高级设定中的“使用有损压缩”、“有损压缩质量”和“自定义压缩/后期处理命令”是什么？
 
-开启“使用有损压缩”以后，如果输出的文件是 JPEG 或 WebP 格式，就可以根据设定的值（0-100 表示从低质量到高质量）控制输出的文件的压缩质量了。如果输入的是文件夹，则放大文件夹中 JPEG 或 WebP 格式的图片时输出的压缩质量也会受这个选项影响。压缩使用 Python 的图像处理库 Pillow 完成。
+开启“使用有损压缩”以后，如果输出的文件是 JPEG 或 WebP 格式，就可以根据设定的值（0-100 表示从低质量到高质量）控制输出的文件的压缩质量了。如果输入的是文件夹，则放大文件夹中 JPEG 或 WebP 格式的图片时输出的压缩质量也会受这个选项影响。压缩使用 `image` crate 和 libwebp 完成。
 
 不开启这个选项的话，输出为 WebP 格式时使用的是无损压缩。
 
@@ -189,6 +196,14 @@ GIF 只支持最多 256 种 RGB 颜色的调色板并设定其中一种颜色为
 项目目录或打包后的可执行文件所在目录下的 `config.ini`，没有这个文件的情况下会使用默认的配置。在退出程序时会自动保存配置。
 
 如果因为配置文件的问题导致程序不能运行的话，可以先尝试将配置文件删除。
+
+### 已知限制
+
+* Slint 的 winit 后端目前不支持接收操作系统层面的文件拖放，因此不能像 Tk 版本那样把文件或文件夹拖进窗口来设定输入路径。请使用「浏览」按钮选择文件，或直接在输入框中输入、粘贴文件（文件夹）的路径。
+* 「浏览」按钮只能选择文件；需要处理整个文件夹时，请手动输入文件夹路径。
+* 有损压缩输出为 WebP 时使用 libwebp，与 Pillow 的编码结果可能存在细微差异。
+* 降采样方式中的 `Hamming` 会使用 `image` crate 中最接近的 `Triangle` 滤波器（`image` 没有提供 Hamming 滤波器）。
+* 合并 GIF 时不再逐个调色板重排透明色索引（这是 Pillow 的浏览器兼容性变通做法），透明通道的量化由 GIF 编码器处理。
 
 ### 我觉得 Real-CUGAN 的放大效果比 Real-ESRGAN 更好
 
@@ -228,12 +243,11 @@ Real-ESRGAN 的 GUI 当然不止一个，这里列出了其中的一部分，并
 
 ## 借物表
 
-* [Pillow](https://github.com/python-pillow/Pillow)
+* [Slint](https://slint.dev/) 跨平台 GUI 框架，使用其内置的 Fluent Design 控件风格
+* [image](https://github.com/image-rs/image) 图片编解码与缩放
+* [webp](https://github.com/jaredforth/webp) libwebp 绑定，用于有损 WebP 编码
+* [rfd](https://github.com/PolyMeilex/rfd) 原生文件选择对话框
 * [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) 原版工具
-* [Sun-Valley-ttk-theme](https://github.com/rdbende/Sun-Valley-ttk-theme) Windows 11 风格的 tkinter 主题，在原版基础上将所有控件的图片打包成了单张 Sprite Sheet，具体操作参见[这里](https://github.com/rdbende/Sun-Valley-ttk-theme/issues/30)
-* [TkInterDnD2](https://github.com/pmgagne/tkinterdnd2) Tkinter 的拖拽支持
-* [darkdetect](https://github.com/albertosottile/darkdetect) 检测是否正在使用深色模式
-* [pyinstaller](https://github.com/pyinstaller/pyinstaller)
 
 ## 致谢
 

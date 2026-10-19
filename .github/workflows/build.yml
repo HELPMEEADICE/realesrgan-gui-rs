@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - master
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       release:
@@ -12,58 +15,66 @@ on:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    env:
-      PYTHONIOENCODING: utf-8
-      PYTHONOPTIMIZE: 1
-    defaults:
-      run:
-        shell: bash
     strategy:
+      fail-fast: false
       matrix:
-        os:
-          - windows-latest
-          - ubuntu-latest
-          - macos-latest
+        include:
+          - os: windows-latest
+            artifact: realesrgan-gui-Windows
+            binary: realesrgan-gui.exe
+          - os: ubuntu-latest
+            artifact: realesrgan-gui-Linux
+            binary: realesrgan-gui
+          - os: macos-latest
+            artifact: realesrgan-gui-macOS
+            binary: realesrgan-gui
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v5
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
         with:
-          python-version: 3.x
-          check-latest: true
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install pip dependencies
-        run: pip install -U -r requirements.txt
-      - name: Setup UPX
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
-          if [ $RUNNER_OS == "Windows" ]; then
-            choco install upx --no-progress
-          elif [ $RUNNER_OS == "Linux" ]; then
-            sudo apt install upx-ucl
-          elif [ $RUNNER_OS == "macOS" ]; then
-            brew install upx
-          fi
-      - name: Build executable
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libfontconfig1-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            libudev-dev
+
+      - name: Build
+        shell: bash
         run: |
-          pip install pyinstaller==6.*
-          python -c "import time;open('define.py','a').write(f'\nBUILD_TIME={time.time():.0f}')"
-          if [[ $RUNNER_OS == "Windows" || $RUNNER_OS == "Linux" ]]; then
-            export REGUI_ONEFILE=1
-          fi
-          if [ $RUNNER_OS == "macOS" ]; then
-            chmod +x build-macos-app.sh
-            sh build-macos-app.sh
-            chmod u+x "dist/Real-ESRGAN GUI.app/Contents/MacOS/realesrgan-gui"
-            sudo xattr -cr "dist/Real-ESRGAN GUI.app"
-          else
-            pyinstaller --clean --log-level WARN realesrgan-gui.spec
-          fi
+          echo "REGUI_BUILD_TIME=$(date +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
+          cargo build --release --locked
+
+      - name: Run tests
+        run: cargo test --release --locked
+
       - name: Upload result
         uses: actions/upload-artifact@v4
         with:
-          name: realesrgan-gui-${{ runner.os }}
-          path: dist
+          name: ${{ matrix.artifact }}
+          path: target/release/${{ matrix.binary }}
+
   release:
     runs-on: ubuntu-latest
     needs: build
@@ -99,59 +110,47 @@ jobs:
           for BUILD_OS in "Windows" "Linux" "macOS"; do
             if [ $BUILD_OS == "Windows" ]; then
               REAL_ESRGAN_PLATFORM=windows
-            elif [ $BUILD_OS == "Linux" ]; then
-              REAL_ESRGAN_PLATFORM=ubuntu
-            elif [ $BUILD_OS == "macOS" ]; then
-              REAL_ESRGAN_PLATFORM=macos
-            fi
-            if [ $BUILD_OS == "macOS" ]; then
-              cd "dist-${BUILD_OS}/Real-ESRGAN GUI.app/Contents/MacOS"
+              BINARY_NAME=realesrgan-gui.exe
             else
-              cd "dist-${BUILD_OS}"
+              BINARY_NAME=realesrgan-gui
+              if [ $BUILD_OS == "Linux" ]; then
+                REAL_ESRGAN_PLATFORM=ubuntu
+              else
+                REAL_ESRGAN_PLATFORM=macos
+              fi
             fi
+
+            cd "dist-${BUILD_OS}"
             wget \
               -nv \
               -O realesrgan-ncnn-vulkan.zip \
               "https://github.com/xinntao/Real-ESRGAN/releases/download/${REAL_ESRGAN_VERSION}/realesrgan-ncnn-vulkan-${REAL_ESRGAN_RELEASE_TIME}-${REAL_ESRGAN_PLATFORM}.zip"
             unzip -o realesrgan-ncnn-vulkan.zip
             rm -f realesrgan-ncnn-vulkan.zip input.jpg input2.jpg onepiece_demo.mp4
-            if [ $BUILD_OS == "macOS" ]; then
-              cp ../../../../README.md README_gui.md
-              cp ../../../../README.en-US.md README_gui.en-US.md
-              cp ../../../../README.uk-UA.md README_gui.uk-UA.md
-              cp ../../../../README.tr-TR.md README_gui.tr-TR.md
-            else
-              cp ../README.md README_gui.md
-              cp ../README.en-US.md README_gui.en-US.md
-              cp ../README.uk-UA.md README_gui.uk-UA.md
-              cp ../README.tr-TR.md README_gui.tr-TR.md
-            fi
+            cp ../README.md README_gui.md
+            cp ../README.en-US.md README_gui.en-US.md
+            cp ../README.uk-UA.md README_gui.uk-UA.md
+            cp ../README.tr-TR.md README_gui.tr-TR.md
 
             if [ $BUILD_OS == "Windows" ]; then
               7z a \
                 ../release/realesrgan-gui-${REAL_ESRGAN_PLATFORM}.7z \
-                realesrgan-gui.exe \
+                ${BINARY_NAME} \
                 -mx9 -mfb256 -md1g -ms
               7z a \
                 ../release/realesrgan-gui-${REAL_ESRGAN_PLATFORM}-bundled-${REAL_ESRGAN_VERSION}.7z \
                 . \
                 -mx9 -mfb256 -md1g -ms
-            elif [ $BUILD_OS == "Linux" ]; then
-              chmod +x realesrgan-gui realesrgan-ncnn-vulkan
+            else
+              chmod +x ${BINARY_NAME} realesrgan-ncnn-vulkan
               XZ_OPT=-e9 tar Jcvf \
                 ../release/realesrgan-gui-${REAL_ESRGAN_PLATFORM}.tar.xz \
-                --transform "s,^\.,realesrgan-gui," \
-                ./realesrgan-gui
+                --transform "s,^\./,realesrgan-gui/," \
+                ./${BINARY_NAME}
               XZ_OPT=-e9 tar Jcvf \
                 ../release/realesrgan-gui-${REAL_ESRGAN_PLATFORM}-bundled-${REAL_ESRGAN_VERSION}.tar.xz \
-                --transform "s,^\.,realesrgan-gui," \
+                --transform "s,^\./,realesrgan-gui/," \
                 .
-            elif [ $BUILD_OS == "macOS" ]; then
-              chmod +x realesrgan-gui realesrgan-ncnn-vulkan
-              cd ../../../
-              XZ_OPT=-e9 tar Jcvf \
-                ../release/realesrgan-gui-${REAL_ESRGAN_PLATFORM}-appbundle-${REAL_ESRGAN_VERSION}.tar.xz \
-                "Real-ESRGAN GUI.app"
             fi
 
             cd ..
