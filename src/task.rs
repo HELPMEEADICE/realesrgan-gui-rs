@@ -53,11 +53,22 @@ impl Progress {
     }
 
     pub fn sub_total(&self, amount: usize) {
-        let _ = self
-            .total
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-                Some(value.saturating_sub(amount))
-            });
+        // Equivalent to `fetch_update`/`try_update` with a saturating subtraction,
+        // but written as an explicit CAS loop: the method was renamed in newer
+        // rustc versions (deprecating the old name), and this form compiles
+        // unchanged on the older toolchains the project still supports.
+        let mut current = self.total.load(Ordering::Relaxed);
+        loop {
+            match self.total.compare_exchange_weak(
+                current,
+                current.saturating_sub(amount),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(actual) => current = actual,
+            }
+        }
     }
 
     pub fn reset(&self) {
