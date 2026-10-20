@@ -25,9 +25,6 @@ use crate::task::{
 };
 use crate::{AppWindow, Strings};
 
-/// Keeps the log view pinned to its last line.
-const LOG_SCROLL_BOTTOM: f32 = -999_999.0;
-
 enum UiMessage {
     Log(String),
     Completed {
@@ -182,7 +179,6 @@ impl App {
         let mut state = self.state.borrow_mut();
         state.log_text.push_str(text);
         self.ui.set_log_text(state.log_text.clone().into());
-        self.ui.set_log_scroll(LOG_SCROLL_BOTTOM);
     }
 
     /// Reads every setting back out of the UI and writes `config.ini`, exactly
@@ -427,7 +423,6 @@ fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>) {
 
     if log_changed {
         ui.set_log_text(guard.log_text.clone().into());
-        ui.set_log_scroll(LOG_SCROLL_BOTTOM);
     }
 }
 

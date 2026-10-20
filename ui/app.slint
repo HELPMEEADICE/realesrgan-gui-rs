@@ -98,8 +98,6 @@ export component AppWindow inherits Window {
     in-out property <bool> ignore-error: false;
     in-out property <bool> preupscale: false;
     in-out property <int> language-index: 0;
-    // Kept in sync from the host to keep the log pinned to the newest line.
-    in-out property <length> log-scroll: -999999px;
 
     callback browse-input();
     callback browse-output();
@@ -442,7 +440,13 @@ export component AppWindow inherits Window {
                 wrap: no-wrap;
                 font-family: "Consolas";
                 font-size: 12px;
-                content-y <=> root.log-scroll;
+            }
+
+            // Keep the newest output visible: whenever the log grows or the
+            // viewport is resized, pin the content to the bottom.
+            property <length> log-bottom: output-log.visible-height - output-log.content-height;
+            changed log-bottom => {
+                output-log.content-y = min(0px, self.log-bottom);
             }
         }
 
