@@ -386,11 +386,11 @@ fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>) {
                         ),
                     )
                 };
-                platform::notify(&title, &body);
+                platform::notify(ui.window(), &title, &body);
             }
             UiMessage::Failed(message) => {
                 let i18n = guard.i18n.clone();
-                platform::notify(&i18n.translate("ToastFailedTitle"), &message);
+                platform::notify(ui.window(), &i18n.translate("ToastFailedTitle"), &message);
             }
             UiMessage::Finished => {
                 guard.processing = false;

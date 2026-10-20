@@ -76,6 +76,19 @@ impl TaskbarProgress {
     }
 }
 
+/// Returns the native handle of the Slint window, when it has been created.
+#[cfg(windows)]
+fn window_hwnd(window: &slint::Window) -> Option<windows::Win32::Foundation::HWND> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows::Win32::Foundation::HWND;
+
+    let raw = window.window_handle().window_handle().ok()?.as_raw();
+    match raw {
+        RawWindowHandle::Win32(win32) => Some(HWND(win32.hwnd.get() as *mut std::ffi::c_void)),
+        _ => None,
+    }
+}
+
 #[cfg(windows)]
 struct WindowsTaskbar {
     list: windows::Win32::UI::Shell::ITaskbarList3,
@@ -85,21 +98,13 @@ struct WindowsTaskbar {
 #[cfg(windows)]
 impl WindowsTaskbar {
     fn new(window: &slint::Window) -> Option<Self> {
-        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
         use windows::core::GUID;
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::System::Com::{
-            CoCreateInstance, CLSCTX_INPROC_SERVER,
-        };
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
         use windows::Win32::UI::Shell::ITaskbarList3;
 
         const CLSID_TASKBAR_LIST: GUID = GUID::from_u128(0x56fdf344_fd6d_11d0_958a_006097c9a090);
 
-        let raw = window.window_handle().window_handle().ok()?.as_raw();
-        let hwnd = match raw {
-            RawWindowHandle::Win32(win32) => HWND(win32.hwnd.get() as *mut std::ffi::c_void),
-            _ => return None,
-        };
+        let hwnd = window_hwnd(window)?;
 
         let list: ITaskbarList3 =
             unsafe { CoCreateInstance(&CLSID_TASKBAR_LIST, None, CLSCTX_INPROC_SERVER) }.ok()?;
@@ -127,20 +132,79 @@ impl WindowsTaskbar {
     }
 }
 
-/// Shows a desktop notification; used when a batch finishes or fails.
-pub fn notify(title: &str, message: &str) {
+/// Shows a native notification-area balloon; used when a batch finishes or
+/// fails. This avoids the WinRT toast workaround that borrowed PowerShell's
+/// AppUserModelID, so the notification is attributed to this application and
+/// uses its embedded icon.
+pub fn notify(window: &slint::Window, title: &str, message: &str) {
     #[cfg(windows)]
     {
-        use tauri_winrt_notification::{Duration, Toast};
-        let _ = Toast::new(Toast::POWERSHELL_APP_ID)
-            .title(title)
-            .text1(message)
-            .duration(Duration::Short)
-            .show();
+        use windows::Win32::UI::Shell::{
+            Shell_NotifyIconW, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_INFO, NIM_ADD,
+            NIM_MODIFY, NOTIFYICONDATAW,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::WM_APP;
+
+        let Some(hwnd) = window_hwnd(window) else {
+            return;
+        };
+
+        let mut data = NOTIFYICONDATAW {
+            cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: hwnd,
+            uID: 1,
+            uFlags: NIF_ICON | NIF_TIP | NIF_MESSAGE,
+            uCallbackMessage: WM_APP + 1,
+            hIcon: load_app_icon(),
+            ..Default::default()
+        };
+        copy_wide(&mut data.szTip, crate::paths::APP_TITLE);
+
+        // `NIM_ADD` fails when the icon is already registered, which is fine:
+        // `NIM_MODIFY` below still updates the existing icon.
+        let _ = unsafe { Shell_NotifyIconW(NIM_ADD, &data) };
+
+        data.uFlags = NIF_INFO;
+        data.dwInfoFlags = NIIF_INFO;
+        copy_wide(&mut data.szInfoTitle, title);
+        copy_wide(&mut data.szInfo, message);
+        let _ = unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) };
     }
     #[cfg(not(windows))]
     {
-        let _ = (title, message);
+        let _ = (window, title, message);
+    }
+}
+
+#[cfg(windows)]
+fn load_app_icon() -> windows::Win32::UI::WindowsAndMessaging::HICON {
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::HINSTANCE;
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::UI::WindowsAndMessaging::{LoadIconW, HICON, IDI_APPLICATION};
+
+    unsafe {
+        if let Ok(module) = GetModuleHandleW(None) {
+            if let Ok(icon) = LoadIconW(Some(HINSTANCE(module.0)), PCWSTR(1 as _)) {
+                return icon;
+            }
+        }
+        LoadIconW(None, IDI_APPLICATION).unwrap_or(HICON(std::ptr::null_mut()))
+    }
+}
+
+#[cfg(windows)]
+fn copy_wide(destination: &mut [u16], text: &str) {
+    let mut units = text.encode_utf16();
+    for slot in destination.iter_mut() {
+        *slot = units.next().unwrap_or(0);
+        if *slot == 0 {
+            return;
+        }
+    }
+    // The text was too long: keep the buffer NUL-terminated.
+    if let Some(last) = destination.last_mut() {
+        *last = 0;
     }
 }
 
