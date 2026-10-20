@@ -164,7 +164,9 @@ export component AppWindow inherits Window {
 
                     HorizontalLayout {
                         spacing: 20px;
-                        alignment: start;
+                        // Stretch the model column so the combo box gets the
+                        // remaining width and can show the full model name.
+                        alignment: stretch;
 
                         VerticalLayout {
                             width: 292px;
