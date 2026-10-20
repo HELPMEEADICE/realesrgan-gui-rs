@@ -25,6 +25,20 @@ use crate::task::{
 };
 use crate::{AppWindow, Strings};
 
+/// Upper bound for the log tail that is kept in the UI. The complete log is
+/// still written to `output.log`; this only limits the string the `TextEdit`
+/// has to lay out. Without a cap a long batch grew it without bound, and every
+/// update rebuilt the text layout for all of it.
+const UI_LOG_MAX_BYTES: usize = 64 * 1024;
+/// Trim in chunks instead of on every appended line, so the buffer is not
+/// shifted for each line once it reaches the cap.
+const UI_LOG_TRIM_THRESHOLD: usize = UI_LOG_MAX_BYTES + UI_LOG_MAX_BYTES / 4;
+/// Shown once the beginning of the log has been dropped from the UI.
+const UI_LOG_TRIM_NOTICE: &str = "... earlier lines were omitted; see output.log ...\n";
+/// `TextEdit` rebuilds its text layout whenever `text` changes, so incoming
+/// lines are coalesced into at most ten updates per second.
+const UI_LOG_REFRESH_INTERVAL: Duration = Duration::from_millis(100);
+
 enum UiMessage {
     Log(String),
     Completed {
@@ -49,6 +63,10 @@ struct State {
     receiver: Option<Receiver<UiMessage>>,
     log_text: String,
     log_file: Option<Arc<Mutex<std::fs::File>>>,
+    /// Set when `log_text` changed since the last push into the UI.
+    log_dirty: bool,
+    /// Time of the last push, used to coalesce `TextEdit` relayouts.
+    log_updated_at: Option<Instant>,
     processing: bool,
     processing_paused: bool,
     progress_display: f32,
@@ -99,6 +117,8 @@ impl App {
             receiver: None,
             log_text: String::new(),
             log_file: None,
+            log_dirty: false,
+            log_updated_at: None,
             processing: false,
             processing_paused: false,
             progress_display: 0.0,
@@ -177,8 +197,10 @@ impl App {
     /// thread; used for the start-up notices.
     pub fn append_log(&self, text: &str) {
         let mut state = self.state.borrow_mut();
-        state.log_text.push_str(text);
-        self.ui.set_log_text(state.log_text.clone().into());
+        append_log_text(&mut state.log_text, text);
+        self.ui.set_log_text(state.log_text.as_str().into());
+        state.log_dirty = false;
+        state.log_updated_at = Some(Instant::now());
     }
 
     /// Reads every setting back out of the UI and writes `config.ini`, exactly
@@ -331,11 +353,43 @@ fn install_callbacks(ui: &AppWindow, state: &Rc<RefCell<State>>) {
 // ---------------------------------------------------------------------------
 
 fn push_log(state: &mut State, text: &str) {
-    state.log_text.push_str(text);
+    append_log_text(&mut state.log_text, text);
+    state.log_dirty = true;
     if let Some(file) = &state.log_file {
         if let Ok(mut file) = file.lock() {
             let _ = file.write_all(text.as_bytes());
         }
+    }
+}
+
+/// Appends to the UI copy of the log and drops the oldest lines once it grows
+/// past the cap. The full log always goes to `output.log`, so this only keeps
+/// the text that the `TextEdit` has to render bounded.
+fn append_log_text(text: &mut String, addition: &str) {
+    text.push_str(addition);
+    trim_log_tail(text);
+}
+
+fn trim_log_tail(text: &mut String) {
+    if text.len() <= UI_LOG_TRIM_THRESHOLD {
+        return;
+    }
+
+    // Cut near `len - cap`; back off to a UTF-8 boundary, then to the next
+    // newline so the visible log starts at a whole line.
+    let mut cut = text.len() - UI_LOG_MAX_BYTES;
+    while cut < text.len() && !text.is_char_boundary(cut) {
+        cut += 1;
+    }
+    let cut = match text[cut..].find('\n') {
+        Some(offset) => cut + offset + 1,
+        // A single enormous line: keep its tail rather than dropping it all.
+        None => cut,
+    };
+    text.drain(..cut);
+
+    if !text.starts_with(UI_LOG_TRIM_NOTICE) {
+        text.insert_str(0, UI_LOG_TRIM_NOTICE);
     }
 }
 
@@ -345,7 +399,6 @@ fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     drain_dropped_files(ui, state);
 
     let mut guard = state.borrow_mut();
-    let mut log_changed = false;
     let mut messages = Vec::new();
     if let Some(receiver) = &guard.receiver {
         while let Ok(message) = receiver.try_recv() {
@@ -356,8 +409,8 @@ fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     for message in messages {
         match message {
             UiMessage::Log(text) => {
-                guard.log_text.push_str(&text);
-                log_changed = true;
+                append_log_text(&mut guard.log_text, &text);
+                guard.log_dirty = true;
             }
             UiMessage::Completed {
                 with_error,
@@ -421,8 +474,20 @@ fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>) {
         }
     }
 
-    if log_changed {
-        ui.set_log_text(guard.log_text.clone().into());
+    if guard.log_dirty {
+        let refresh_due = match guard.log_updated_at {
+            Some(at) => at.elapsed() >= UI_LOG_REFRESH_INTERVAL,
+            None => true,
+        };
+        // While a batch runs the log grows many times per second. Coalescing
+        // the updates keeps the text layout churn, and its transient
+        // allocations, proportional to what is actually displayed. The final
+        // update after a run is always pushed immediately.
+        if refresh_due || !guard.processing {
+            ui.set_log_text(guard.log_text.as_str().into());
+            guard.log_dirty = false;
+            guard.log_updated_at = Some(Instant::now());
+        }
     }
 }
 
@@ -572,6 +637,8 @@ fn start_processing(ui: &AppWindow, state: &Rc<RefCell<State>>) {
 
     // Reset the UI for the new run.
     guard.log_text.clear();
+    guard.log_dirty = false;
+    guard.log_updated_at = None;
     guard.progress_display = 0.0;
     guard.progress_override = None;
     guard.processing = true;
@@ -1008,5 +1075,43 @@ fn collect_config_params(ui: &AppWindow, state: &State) -> ReConfigParams {
         use_tta: ui.get_use_tta(),
         preupscale: ui.get_preupscale(),
         custom_command: ui.get_custom_command().trim().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{trim_log_tail, UI_LOG_MAX_BYTES, UI_LOG_TRIM_NOTICE};
+
+    #[test]
+    fn trims_the_ui_log_to_a_whole_line_tail() {
+        let mut text = String::new();
+        for index in 0..10_000 {
+            text.push_str(&format!("line {index} \u{4f60}\u{597d}\n"));
+        }
+
+        trim_log_tail(&mut text);
+
+        // The tail is cut at a newline and only the notice is added on top.
+        assert!(text.len() <= UI_LOG_MAX_BYTES + 256);
+        assert!(text.starts_with(UI_LOG_TRIM_NOTICE));
+        assert!(text.ends_with("line 9999 \u{4f60}\u{597d}\n"));
+        assert!(text.lines().count() < 10_000);
+    }
+
+    #[test]
+    fn trims_without_splitting_a_multibyte_character() {
+        let mut text = String::new();
+        while text.len() < UI_LOG_MAX_BYTES * 2 {
+            text.push('\u{4f60}');
+        }
+
+        trim_log_tail(&mut text);
+
+        // The fallback cut also has to land on a character boundary: every
+        // remaining character is three bytes wide.
+        assert!(text.starts_with(UI_LOG_TRIM_NOTICE));
+        let tail = text.strip_prefix(UI_LOG_TRIM_NOTICE).unwrap();
+        assert!(!tail.is_empty());
+        assert_eq!(tail.len() % 3, 0);
     }
 }

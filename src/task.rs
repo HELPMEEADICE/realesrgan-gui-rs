@@ -366,10 +366,9 @@ impl Task for ReSpawnTask {
 
         let mut input = self.input.clone();
         let mut remove_input = self.remove_input;
-        let (mut source_width, mut source_height) = {
-            let image = imaging::open_image(&input)?;
-            (image.width(), image.height())
-        };
+        // Only the header is read here. Decoding the whole image just to learn
+        // its size used to cost a full-resolution buffer before any work began.
+        let (mut source_width, mut source_height) = imaging::image_dimensions(&input)?;
 
         // Palette based PNG files lose their alpha channel inside the upscaler,
         // so they are flattened to RGBA first.
@@ -513,14 +512,21 @@ impl Task for ReSpawnTask {
                 })?;
             }
         } else {
-            let image = imaging::open_image(&last)?;
+            // The upscaler output is the largest buffer the application ever
+            // holds; encode it straight from the decoded colour type and let
+            // `resize_image` reuse the buffer when no resize is needed.
+            let resized_image = imaging::open_image(&last)?;
             (ctx.out)(&format!(
                 "Downsample from {}x{} to {destination_width}x{destination_height}.\n",
-                image.width(),
-                image.height()
+                resized_image.width(),
+                resized_image.height()
             ));
-            let resized =
-                imaging::resize_image(&image, destination_width, destination_height, self.config.downsample);
+            let resized = imaging::resize_image(
+                resized_image,
+                destination_width,
+                destination_height,
+                self.config.downsample,
+            );
             imaging::save_image(&resized, &self.output)?;
             if scale_pass > 0 {
                 let _ = std::fs::remove_file(&last);
@@ -567,20 +573,23 @@ impl Task for MergeGifTask {
             self.frames.len(),
             self.output.display()
         ));
+        if self.frames.is_empty() {
+            return Err(anyhow!("no frames to merge"));
+        }
 
-        let mut images = Vec::with_capacity(self.frames.len());
-        for frame in &self.frames {
-            let mut image = imaging::open_image(frame)?.to_rgba8();
+        // Encode while decoding: keeping every upscaled frame in a Vec used to
+        // need `frame_count * width * height * 4` bytes, twice over while the
+        // encoder cloned each buffer.
+        let mut writer = imaging::GifWriter::create(&self.output)?;
+        for (index, frame) in self.frames.iter().enumerate() {
+            let mut image = imaging::open_image(frame)?.into_rgba8();
             if self.optimize_transparency {
                 image = imaging::optimize_gif_alpha(&image);
             }
             let _ = std::fs::remove_file(frame);
-            images.push(image);
+            let duration = self.durations.get(index).copied().unwrap_or(0);
+            writer.write_frame(image, duration)?;
         }
-        if images.is_empty() {
-            return Err(anyhow!("no frames to merge"));
-        }
-        imaging::write_gif(&images, &self.durations, &self.output)?;
         Ok(Vec::new())
     }
 }
@@ -610,7 +619,6 @@ impl SplitGifTask {
 
 impl Task for SplitGifTask {
     fn run(&mut self, ctx: &TaskContext) -> Result<Vec<Box<dyn Task>>> {
-        let frames = imaging::read_gif_frames(&self.input)?;
         let extension = if self.optimize_transparency {
             ".png"
         } else {
@@ -620,8 +628,12 @@ impl Task for SplitGifTask {
         let mut tasks: Vec<Box<dyn Task>> = Vec::new();
         let mut merged_frames: Vec<PathBuf> = Vec::new();
         let mut durations: Vec<u16> = Vec::new();
+        let mut index = 0usize;
 
-        for (index, (frame, duration)) in frames.into_iter().enumerate() {
+        // Frames are written out as they are decoded. Previously the complete
+        // animation was decoded into a Vec first, so peak memory was
+        // proportional to the frame count.
+        imaging::for_each_gif_frame(&self.input, |frame, duration| {
             let frame_source = imaging::temp_path(extension);
             let frame_destination = imaging::temp_path(extension);
 
@@ -647,7 +659,10 @@ impl Task for SplitGifTask {
                 true,
             )));
             ctx.progress.add_total(1);
-        }
+            index += 1;
+            Ok(())
+        })?;
+
         // The caller already counted the GIF itself as one task.
         ctx.progress.sub_total(1);
 

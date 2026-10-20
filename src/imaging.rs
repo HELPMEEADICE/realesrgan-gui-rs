@@ -1,6 +1,7 @@
 //! Image helpers shared by the processing tasks. This replaces the Pillow usages
 //! of the original implementation (`task.py`).
 
+use std::borrow::Cow;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
@@ -12,7 +13,8 @@ use image::codecs::png::PngEncoder;
 use image::codecs::tiff::TiffEncoder;
 use image::codecs::webp::WebPEncoder;
 use image::{
-    AnimationDecoder, Delay, DynamicImage, GrayImage, ImageEncoder, Luma, Rgba, RgbaImage,
+    AnimationDecoder, Delay, DynamicImage, GrayImage, ImageEncoder, ImageReader, Luma, Rgba,
+    RgbaImage, RgbImage,
 };
 
 use crate::model::Downsample;
@@ -62,6 +64,17 @@ pub fn open_image(path: &Path) -> Result<DynamicImage> {
     image::open(path).with_context(|| format!("failed to open {}", path.display()))
 }
 
+/// Reads only the image header. The upscale task needs the source size to plan
+/// its passes; decoding the whole picture just for `width`/`height` used to
+/// cost a full-resolution buffer for every file, which is significant for
+/// multi-megapixel inputs.
+pub fn image_dimensions(path: &Path) -> Result<(u32, u32)> {
+    ImageReader::open(path)
+        .with_context(|| format!("failed to open {}", path.display()))?
+        .into_dimensions()
+        .with_context(|| format!("failed to read the dimensions of {}", path.display()))
+}
+
 /// Reads the PNG IHDR colour type. Type 3 is palette based; ncnn based
 /// upscalers drop the alpha channel of such files, so they are flattened to
 /// RGBA first (the original did the same for PIL's `P` mode).
@@ -86,16 +99,17 @@ pub fn is_indexed_png(path: &Path) -> bool {
 }
 
 pub fn resize_image(
-    image: &DynamicImage,
+    image: DynamicImage,
     width: u32,
     height: u32,
     downsample: Downsample,
 ) -> DynamicImage {
     let width = width.max(1);
     let height = height.max(1);
-    let (source_width, source_height) = (image.width(), image.height());
-    if source_width == width && source_height == height {
-        return image.clone();
+    if image.width() == width && image.height() == height {
+        // Hand the decoded buffer back instead of cloning it: when no
+        // downsample is needed this used to double the peak memory.
+        return image;
     }
     if matches!(downsample, Downsample::Box) {
         // `thumbnail` performs the fast integer box average PIL's BOX filter
@@ -103,6 +117,43 @@ pub fn resize_image(
         return image.thumbnail_exact(width, height);
     }
     image.resize_exact(width, height, downsample.image_filter())
+}
+
+/// Creates the output file with a buffered writer, the way every save path
+/// below starts.
+fn create_writer(path: &Path) -> Result<BufWriter<File>> {
+    let file = File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
+    Ok(BufWriter::new(file))
+}
+
+/// Borrows the RGBA buffer when the image already is RGBA8 and converts only
+/// otherwise, avoiding a full-size copy for the common case.
+fn rgba_or_owned(image: &DynamicImage) -> Cow<'_, RgbaImage> {
+    match image.as_rgba8() {
+        Some(buffer) => Cow::Borrowed(buffer),
+        None => Cow::Owned(image.to_rgba8()),
+    }
+}
+
+fn rgb_or_owned(image: &DynamicImage) -> Cow<'_, RgbImage> {
+    match image.as_rgb8() {
+        Some(buffer) => Cow::Borrowed(buffer),
+        None => Cow::Owned(image.to_rgb8()),
+    }
+}
+
+/// Encodes the decoded buffer in its native colour type. Forcing RGBA first
+/// allocated a second full-size buffer (and dropped the alpha-less RGB layout
+/// that the upscaler usually returns).
+fn write_png<W: Write>(image: &DynamicImage, writer: W) -> Result<()> {
+    PngEncoder::new(writer)
+        .write_image(
+            image.as_bytes(),
+            image.width(),
+            image.height(),
+            image.color().into(),
+        )
+        .context("failed to encode PNG")
 }
 
 /// Saves with the format implied by the file extension, the same way
@@ -118,18 +169,24 @@ pub fn save_image(image: &DynamicImage, path: &Path) -> Result<()> {
         .and_then(|it| it.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    let file = File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
-    let mut writer = BufWriter::new(file);
 
     match extension.as_str() {
         "jpg" | "jpeg" => {
-            let rgb = image.to_rgb8();
+            let mut writer = create_writer(path)?;
+            let rgb = rgb_or_owned(image);
             JpegEncoder::new_with_quality(&mut writer, 75)
-                .write_image(rgb.as_raw(), rgb.width(), rgb.height(), image::ExtendedColorType::Rgb8)
+                .write_image(
+                    rgb.as_raw(),
+                    rgb.width(),
+                    rgb.height(),
+                    image::ExtendedColorType::Rgb8,
+                )
                 .context("failed to encode JPEG")?;
+            writer.flush()?;
         }
         "webp" => {
-            let rgba = image.to_rgba8();
+            let mut writer = create_writer(path)?;
+            let rgba = rgba_or_owned(image);
             WebPEncoder::new_lossless(&mut writer)
                 .write_image(
                     rgba.as_raw(),
@@ -138,34 +195,31 @@ pub fn save_image(image: &DynamicImage, path: &Path) -> Result<()> {
                     image::ExtendedColorType::Rgba8,
                 )
                 .context("failed to encode lossless WebP")?;
+            writer.flush()?;
         }
         "gif" => {
-            write_gif(&[image.to_rgba8()], &[0], path)?;
-            return Ok(());
+            let mut writer = GifWriter::create(path)?;
+            writer.write_frame(image.to_rgba8(), 0)?;
         }
         "tif" | "tiff" => {
+            let mut writer = create_writer(path)?;
+            let rgba = rgba_or_owned(image);
             TiffEncoder::new(&mut writer)
-                .write_image(
-                    image.to_rgba8().as_raw(),
-                    image.width(),
-                    image.height(),
-                    image::ExtendedColorType::Rgba8,
-                )
-                .context("failed to encode TIFF")?;
-        }
-        _ => {
-            let rgba = image.to_rgba8();
-            PngEncoder::new(&mut writer)
                 .write_image(
                     rgba.as_raw(),
                     rgba.width(),
                     rgba.height(),
                     image::ExtendedColorType::Rgba8,
                 )
-                .context("failed to encode PNG")?;
+                .context("failed to encode TIFF")?;
+            writer.flush()?;
+        }
+        _ => {
+            let mut writer = create_writer(path)?;
+            write_png(image, &mut writer)?;
+            writer.flush()?;
         }
     }
-    writer.flush()?;
     Ok(())
 }
 
@@ -177,97 +231,102 @@ pub fn save_lossless(image: &DynamicImage, path: &Path) -> Result<()> {
         .and_then(|it| it.to_str())
         .map(|it| it.to_ascii_lowercase())
         .unwrap_or_default();
+    let mut writer = create_writer(path)?;
     match extension.as_str() {
         "webp" => {
-            let rgba = image.to_rgba8();
-            let file = File::create(path)?;
-            let mut writer = BufWriter::new(file);
+            let rgba = rgba_or_owned(image);
             WebPEncoder::new_lossless(&mut writer).write_image(
                 rgba.as_raw(),
                 rgba.width(),
                 rgba.height(),
                 image::ExtendedColorType::Rgba8,
             )?;
-            writer.flush()?;
-            Ok(())
         }
-        _ => {
-            let rgba = image.to_rgba8();
-            let file = File::create(path)?;
-            let mut writer = BufWriter::new(file);
-            PngEncoder::new(&mut writer).write_image(
-                rgba.as_raw(),
-                rgba.width(),
-                rgba.height(),
-                image::ExtendedColorType::Rgba8,
-            )?;
-            writer.flush()?;
-            Ok(())
-        }
+        _ => write_png(image, &mut writer)?,
     }
+    writer.flush()?;
+    Ok(())
 }
 
 /// Lossy WebP (quality 0-100) through libwebp; Pillow's
 /// `save(quality=..., method=6)` equivalent.
 pub fn save_lossy_webp(image: &DynamicImage, path: &Path, quality: u8) -> Result<()> {
-    let rgba = image.to_rgba8();
-    let encoder = webp::Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height());
-    let memory = encoder.encode(quality as f32);
-    std::fs::write(path, &*memory)?;
+    // libwebp accepts RGB directly, which avoids the RGBA copy that the old
+    // unconditional conversion made for the typical alpha-less upscaled image.
+    let encoded = if let Some(rgb) = image.as_rgb8() {
+        webp::Encoder::from_rgb(rgb.as_raw(), rgb.width(), rgb.height()).encode(quality as f32)
+    } else if let Some(rgba) = image.as_rgba8() {
+        webp::Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height()).encode(quality as f32)
+    } else {
+        let rgba = image.to_rgba8();
+        webp::Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height()).encode(quality as f32)
+    };
+    std::fs::write(path, &*encoded)?;
     Ok(())
 }
 
 pub fn save_lossy_jpeg(image: &DynamicImage, path: &Path, quality: u8) -> Result<()> {
-    let rgb = image.to_rgb8();
-    let file = File::create(path)?;
-    let mut writer = BufWriter::new(file);
-    JpegEncoder::new_with_quality(&mut writer, quality)
-        .write_image(rgb.as_raw(), rgb.width(), rgb.height(), image::ExtendedColorType::Rgb8)?;
+    let rgb = rgb_or_owned(image);
+    let mut writer = create_writer(path)?;
+    JpegEncoder::new_with_quality(&mut writer, quality).write_image(
+        rgb.as_raw(),
+        rgb.width(),
+        rgb.height(),
+        image::ExtendedColorType::Rgb8,
+    )?;
     writer.flush()?;
     Ok(())
 }
 
-/// Decodes every frame of a GIF together with its delay in milliseconds.
-pub fn read_gif_frames(path: &Path) -> Result<Vec<(RgbaImage, u16)>> {
+/// Decodes one GIF frame at a time and hands it to `handle`. The decoder only
+/// keeps the previous frame (needed for disposal), so a long animation no
+/// longer has to fit in memory as a whole, unlike the old
+/// `collect_frames()` based implementation.
+pub fn for_each_gif_frame<F>(path: &Path, mut handle: F) -> Result<()>
+where
+    F: FnMut(RgbaImage, u16) -> Result<()>,
+{
     let file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
     let decoder = GifDecoder::new(BufReader::new(file)).context("failed to decode GIF")?;
-    let frames = decoder
-        .into_frames()
-        .collect_frames()
-        .context("failed to collect GIF frames")?;
 
-    let mut result = Vec::with_capacity(frames.len());
-    for frame in frames {
+    for frame in decoder.into_frames() {
+        let frame = frame.context("failed to decode GIF frame")?;
         let delay = frame.delay();
         let (numerator, denominator) = delay.numer_denom_ms();
         let milliseconds = numerator
             .checked_div(denominator)
             .unwrap_or(0)
             .min(u16::MAX as u32) as u16;
-        result.push((frame.into_buffer(), milliseconds));
-    }
-    Ok(result)
-}
-
-/// Writes an animated GIF with an infinite loop, mirroring
-/// `save(save_all=True, optimize=True, loop=0, duration=..., disposal=2)`.
-pub fn write_gif(frames: &[RgbaImage], durations_ms: &[u16], path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).ok();
-        }
-    }
-    let file = File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
-    let mut encoder = GifEncoder::new(BufWriter::new(file));
-    encoder.set_repeat(Repeat::Infinite)?;
-    for (index, frame) in frames.iter().enumerate() {
-        let milliseconds = durations_ms.get(index).copied().unwrap_or(0);
-        let delay = Delay::from_numer_denom_ms(milliseconds as u32, 1);
-        encoder
-            .encode_frame(image::Frame::from_parts(frame.clone(), 0, 0, delay))
-            .context("failed to encode GIF frame")?;
+        handle(frame.into_buffer(), milliseconds)?;
     }
     Ok(())
+}
+
+/// Incremental GIF writer: each frame is encoded (and its buffer dropped) as
+/// soon as it is available, instead of gathering every frame first and cloning
+/// it again while encoding.
+pub struct GifWriter {
+    encoder: GifEncoder<BufWriter<File>>,
+}
+
+impl GifWriter {
+    pub fn create(path: &Path) -> Result<Self> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).ok();
+            }
+        }
+        let mut encoder = GifEncoder::new(create_writer(path)?);
+        encoder.set_repeat(Repeat::Infinite)?;
+        Ok(Self { encoder })
+    }
+
+    pub fn write_frame(&mut self, frame: RgbaImage, duration_ms: u16) -> Result<()> {
+        let delay = Delay::from_numer_denom_ms(duration_ms as u32, 1);
+        self.encoder
+            .encode_frame(image::Frame::from_parts(frame, 0, 0, delay))
+            .context("failed to encode GIF frame")
+    }
 }
 
 /// Composites a frame onto white while keeping its own alpha channel, which is

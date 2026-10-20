@@ -1,8 +1,12 @@
 name: build
 
-# 手动触发：三平台编译，产物上传到 Actions artifacts。
+# 推送到 master：三平台编译，产物上传到 Actions artifacts（日常开发不在本机跑 cargo）。
+# 手动触发：同样三平台编译并上传 artifacts。
 # 发布 Release 时触发：三平台编译并打包，产物上传到该 Release。
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
   release:
     types:
