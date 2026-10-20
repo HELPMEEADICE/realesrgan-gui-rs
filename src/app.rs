@@ -2,7 +2,7 @@
 //! pipeline. This is the Rust counterpart of the `REGUIApp` class.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use slint::{ComponentHandle, Timer, TimerMode};
 
 use crate::config::Config;
+use crate::dragdrop::FileDropTarget;
 use crate::i18n::{self, FormatArg, I18n};
 use crate::imaging;
 use crate::model::{Downsample, ReConfigParams, ResizeMode, TILE_SIZES};
@@ -57,6 +58,12 @@ struct State {
     /// Set while the bar is forced to a value, e.g. 100% when a run completes.
     progress_override: Option<f32>,
     taskbar: Option<TaskbarProgress>,
+    /// Installed lazily: the native window handle only exists once the event
+    /// loop has started, which is also when the UI timer first fires.
+    drop_target: Option<FileDropTarget>,
+    drop_sender: Sender<Vec<PathBuf>>,
+    drop_receiver: Receiver<Vec<PathBuf>>,
+    drop_target_attempts: u8,
     started_at: Option<Instant>,
     toast_output: String,
 }
@@ -80,6 +87,8 @@ impl App {
     ) -> anyhow::Result<Self> {
         let ui = AppWindow::new()?;
 
+        let (drop_sender, drop_receiver) = channel::<Vec<PathBuf>>();
+
         let state = Rc::new(RefCell::new(State {
             config,
             i18n,
@@ -98,6 +107,10 @@ impl App {
             progress_display: 0.0,
             progress_override: None,
             taskbar: None,
+            drop_target: None,
+            drop_sender,
+            drop_receiver,
+            drop_target_attempts: 0,
             started_at: None,
             toast_output: String::new(),
         }));
@@ -332,6 +345,9 @@ fn push_log(state: &mut State, text: &str) {
 
 /// Polls the worker thread and updates the UI. Runs on the UI thread.
 fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>) {
+    ensure_drop_target(ui, state);
+    drain_dropped_files(ui, state);
+
     let mut guard = state.borrow_mut();
     let mut log_changed = false;
     let mut messages = Vec::new();
@@ -417,6 +433,52 @@ fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>) {
 
 fn round_progress(value: f32) -> u64 {
     (value.clamp(0.0, 1.0) as f64 * 100.0).round() as u64
+}
+
+// ---------------------------------------------------------------------------
+// Native drag and drop
+// ---------------------------------------------------------------------------
+
+/// Installs the native drop target once the window handle exists. Retried from
+/// the UI timer for a few seconds in case the window is still being created.
+fn ensure_drop_target(ui: &AppWindow, state: &Rc<RefCell<State>>) {
+    let mut guard = state.borrow_mut();
+    if guard.drop_target.is_some() || guard.drop_target_attempts >= 100 {
+        return;
+    }
+    guard.drop_target_attempts = guard.drop_target_attempts.saturating_add(1);
+    guard.drop_target = FileDropTarget::new(ui.window(), guard.drop_sender.clone());
+}
+
+/// Applies the paths dropped onto the window. Running from the UI timer keeps
+/// every Slint property write on the UI thread.
+fn drain_dropped_files(ui: &AppWindow, state: &Rc<RefCell<State>>) {
+    let dropped = {
+        let guard = state.borrow();
+        let mut paths = Vec::new();
+        while let Ok(batch) = guard.drop_receiver.try_recv() {
+            paths.extend(batch);
+        }
+        paths
+    };
+    if dropped.is_empty() {
+        return;
+    }
+
+    let models = state.borrow().models.clone();
+    let mut accepted = Vec::new();
+    let mut seen = HashSet::new();
+    for path in dropped {
+        if !path.is_dir() && !paths::is_image_path(&path) {
+            continue;
+        }
+        if seen.insert(path.clone()) {
+            accepted.push(path);
+        }
+    }
+    if !accepted.is_empty() {
+        set_input_path(ui, &accepted, &models);
+    }
 }
 
 // ---------------------------------------------------------------------------

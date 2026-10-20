@@ -3,6 +3,7 @@
 
 mod app;
 mod config;
+mod dragdrop;
 mod i18n;
 mod imaging;
 mod model;

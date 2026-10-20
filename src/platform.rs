@@ -148,8 +148,9 @@ pub fn notify(title: &str, message: &str) {
 pub fn init() {
     #[cfg(windows)]
     {
-        use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
-        // Failure is fine, COM may already be initialised by the backend.
-        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+        use windows::Win32::System::Ole::OleInitialize;
+        // OLE, not just COM, is required by the drag-and-drop drop target.
+        // Failure is fine, the backend may already have initialised the apartment.
+        let _ = unsafe { OleInitialize(None) };
     }
 }
