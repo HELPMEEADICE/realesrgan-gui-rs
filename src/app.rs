@@ -820,9 +820,9 @@ fn ui_font_family() -> &'static str {
 fn about_subtitle() -> String {
     match option_env!("REGUI_BUILD_TIME") {
         Some(value) if !value.trim().is_empty() => {
-            format!("By TransparentLC\nBuilt at {}", value.trim())
+            format!("By HELPMEEADICE\nBuilt at {}", value.trim())
         }
-        _ => "By TransparentLC".to_string(),
+        _ => "By HELPMEEADICE".to_string(),
     }
 }
 
