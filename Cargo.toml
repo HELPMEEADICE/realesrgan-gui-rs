@@ -38,6 +38,10 @@ tauri-winrt-notification = "0.8"
 [build-dependencies]
 slint-build = "1.18"
 
+[target.'cfg(windows)'.build-dependencies]
+# Embeds icon-256px.ico and the version metadata into the executable.
+winresource = "=0.1.31"
+
 [profile.release]
 # 性能优先的发布配置：最高优化等级 + Fat LTO + 单 codegen unit，
 # 让跨 crate 内联与 LLVM 全局优化发挥到极限（代价是编译时间变长）。
