@@ -19,6 +19,8 @@ slint = { version = "1.18", default-features = false, features = [
     "backend-winit",
     "renderer-software",
     "raw-window-handle-06",
+    # Slint 1.18 要求显式打开兼容性开关；它是空特性，不会带进额外依赖。
+    "compat-1-2",
 ] }
 anyhow = "1"
 # `ico` 会顺带启用 bmp 解码，但应用的扩展名白名单里没有这两种格式，去掉可以
