@@ -58,10 +58,7 @@ jobs:
             libxcb-render0-dev \
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
-            libfontconfig1-dev \
-            libgl1-mesa-dev \
-            libglu1-mesa-dev \
-            libudev-dev
+            libfontconfig1-dev
 
       - name: Build
         shell: bash

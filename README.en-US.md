@@ -64,7 +64,7 @@ cargo run
 cargo build --release
 ```
 
-The first build downloads the dependencies (Slint, image, rfd, libwebp, …) and therefore needs network access. On Linux you also need the system libraries Slint / winit rely on, such as `libxkbcommon`, `libwayland-client`, `fontconfig` and the OpenGL development packages.
+The first build downloads the dependencies (Slint, image, rfd, libwebp, …) and therefore needs network access. On Linux you also need the system libraries Slint / winit rely on, such as the `libxkbcommon`, `libwayland-client` and `fontconfig` development packages; the UI uses Slint's software renderer, so the OpenGL development packages are not required.
 
 To ship the application, put `target/release/realesrgan-gui[.exe]` next to Real-ESRGAN-ncnn-vulkan's executable and models. The translations are embedded into the executable, so `i18n.ini` does not have to be shipped separately.
 

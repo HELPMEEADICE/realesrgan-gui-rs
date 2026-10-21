@@ -55,10 +55,7 @@ jobs:
             libxcb-render0-dev \
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
-            libfontconfig1-dev \
-            libgl1-mesa-dev \
-            libglu1-mesa-dev \
-            libudev-dev
+            libfontconfig1-dev
 
       # 只做提示不做门禁：当前代码还没跑过 cargo fmt，直接卡住会挡住其他检查。
       # 等代码统一格式化后，去掉 continue-on-error 即可变成强制检查。

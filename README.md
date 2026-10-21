@@ -67,7 +67,7 @@ cargo run
 cargo build --release
 ```
 
-首次构建需要联网下载依赖（Slint、image、rfd、libwebp 等）。在 Linux 上还需要安装 Slint / winit 所需的系统库，例如 `libxkbcommon`、`libwayland-client`、`fontconfig` 和 OpenGL 相关的开发包。
+首次构建需要联网下载依赖（Slint、image、rfd、libwebp 等）。在 Linux 上还需要安装 Slint / winit 所需的系统库，例如 `libxkbcommon`、`libwayland-client`、`fontconfig` 等开发包；界面使用 Slint 的软件渲染器，不需要 OpenGL 开发包。
 
 发布时把 `target/release/realesrgan-gui[.exe]` 和 Real-ESRGAN-ncnn-vulkan 的主程序、模型放在同一目录即可。翻译文件已经内嵌在可执行文件中，不需要额外附带 `i18n.ini`。
 
