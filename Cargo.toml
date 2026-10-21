@@ -11,10 +11,21 @@ build = "build.rs"
 exclude = ["_probe_slint/**"]
 
 [dependencies]
-slint = { version = "1.18", features = ["renderer-software", "raw-window-handle-06"] }
+# Slint 的默认特性会额外编入 femtovg/OpenGL 渲染器、AccessKit 无障碍支持和
+# 系统托盘，而本项目只用软件渲染器。这里关闭默认特性、只保留运行必需的部分，
+# 可以在三个平台上都显著减小可执行文件体积。
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "backend-winit",
+    "renderer-software",
+    "raw-window-handle-06",
+] }
 anyhow = "1"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff", "ico"] }
-webp = "0.3"
+# `ico` 会顺带启用 bmp 解码，但应用的扩展名白名单里没有这两种格式，去掉可以
+# 省下这部分解码器（PNG/JPEG/GIF/WebP/TIFF 仍完整保留）。
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff"] }
+# 只使用 libwebp 的原始 RGB/RGBA 编码接口，不需要默认的 `img` 适配层。
+webp = { version = "0.3", default-features = false }
 rfd = "0.17"
 shlex = "1"
 sys-locale = "0.3"
@@ -44,9 +55,11 @@ slint-build = "1.18"
 winresource = "=0.1.31"
 
 [profile.release]
-# 性能优先的发布配置：最高优化等级 + Fat LTO + 单 codegen unit，
-# 让跨 crate 内联与 LLVM 全局优化发挥到极限（代价是编译时间变长）。
-opt-level = 3
+# 体积优先的发布配置：`z` 会让 LLVM 放弃以体积换速度的优化，再叠加 Fat LTO、
+# 单 codegen unit、abort panic 和符号剥离，尽可能压缩最终二进制。
+# 真正的重计算（Real-ESRGAN 推理）在外部 ncnn 进程中完成，
+# 因此这里牺牲一点 Rust 侧速度来换取更小的分发包是划算的。
+opt-level = "z"
 lto = "fat"
 codegen-units = 1
 panic = "abort"
@@ -54,6 +67,6 @@ incremental = false
 overflow-checks = false
 strip = true
 
-# 依赖同样按最高等级优化（Fat LTO 会一并参与链接期优化）。
+# 依赖也按体积优先生成，避免第三方 crate 把 `opt-level = 3` 的体积带回来。
 [profile.release.package."*"]
-opt-level = 3
+opt-level = "z"
