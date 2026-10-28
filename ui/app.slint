@@ -7,7 +7,6 @@ import {
     SpinBox,
     Switch,
     TabWidget,
-    TextEdit,
 } from "std-widgets.slint";
 import { FieldLabel, RadioButton } from "components.slint";
 
@@ -430,23 +429,32 @@ export component AppWindow inherits Window {
             vertical-stretch: 1;
             min-height: 120px;
 
-            output-log := TextEdit {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                height: parent.height;
-                text: root.log-text;
-                read-only: true;
-                wrap: no-wrap;
-                font-family: "Consolas";
-                font-size: 12px;
-            }
+            // A read-only TextInput that never grows taller than the box. When
+            // the log overflows, its text is bottom-aligned, so the newest line
+            // stays visible while older lines are clipped at the top; when the
+            // log fits, the input shrinks to the text height and the text starts
+            // at the top edge. Aligning the text inside the input (instead of
+            // moving the item itself) keeps selection and hit-testing aligned
+            // with what is visible, and no scroll offset is involved that could
+            // jump back to the first line.
+            Rectangle {
+                x: 12px;
+                y: 12px;
+                width: parent.width - 24px;
+                height: parent.height - 24px;
+                clip: true;
 
-            // Keep the newest output visible: whenever the log grows or the
-            // viewport is resized, pin the content to the bottom.
-            property <length> log-bottom: output-log.visible-height - output-log.content-height;
-            changed log-bottom => {
-                output-log.content-y = min(0px, self.log-bottom);
+                TextInput {
+                    width: parent.width;
+                    height: min(parent.height, self.preferred-height);
+                    text: root.log-text;
+                    read-only: true;
+                    wrap: no-wrap;
+                    vertical-alignment: bottom;
+                    font-family: "Consolas";
+                    font-size: 12px;
+                    color: Palette.foreground;
+                }
             }
         }
 

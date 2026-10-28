@@ -364,7 +364,7 @@ fn push_log(state: &mut State, text: &str) {
 
 /// Appends to the UI copy of the log and drops the oldest lines once it grows
 /// past the cap. The full log always goes to `output.log`, so this only keeps
-/// the text that the `TextEdit` has to render bounded.
+/// the text that the log pane has to render bounded.
 fn append_log_text(text: &mut String, addition: &str) {
     text.push_str(addition);
     trim_log_tail(text);
