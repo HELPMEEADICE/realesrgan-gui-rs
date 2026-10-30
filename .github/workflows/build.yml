@@ -94,10 +94,19 @@ jobs:
           # Release 触发时构建该 tag 的源码；手动触发时用界面上选中的分支。
           ref: ${{ github.event.release.tag_name || github.ref }}
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      # 体积优先的发布构建用 nightly：release profile 已经压满
+      # （-Oz / Fat LTO / 单 codegen unit / panic=abort / strip），此时还能再砍的
+      # 最大一块是 libstd 本身——它仍按 -O3 编译，并且带着整条 panic 格式化链路。
+      # 下面的 `-Z build-std` 让 std 也走同一套体积优先参数，
+      # `panic_immediate_abort` 再把 panic 直接变成 abort。两者在 stable 上不可用，
+      # 所以只有这个「出分发包」的流水线换成 nightly；ci.yml 的检查与冒烟仍跑 stable。
+      # 万一某次 nightly 抖动导致构建失败，把版本钉到具体日期即可，
+      # 例如 dtolnay/rust-toolchain@nightly-2026-01-01。
+      - name: Setup Rust（nightly + rust-src，供 build-std 使用）
+        uses: dtolnay/rust-toolchain@nightly
         with:
           targets: ${{ matrix.target }}
+          components: rust-src
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -132,11 +141,23 @@ jobs:
         shell: bash
         run: echo "REGUI_BUILD_TIME=$(date +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
 
+      # 三条只在 nightly 上可用的体积开关：
+      #   -Z build-std=std,panic_abort
+      #       让 std 也按 Cargo.toml 的 [profile.release]（opt-level = "z"、
+      #       Fat LTO、panic = "abort"）重新编译，而不是沿用发行版预先优化的 -O3 std；
+      #   -Z build-std-features=panic_immediate_abort
+      #       panic 直接 abort，省掉格式化参数、位置信息和 Backtrace 相关的代码与字符串；
+      #   -Zlocation-detail=none
+      #       连 panic 位置里的文件/行号字符串也一并去掉。
       - name: Build
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo build --release --locked --target "$TARGET"
+          RUSTFLAGS: -Zlocation-detail=none
+        run: |
+          cargo build --release --locked --target "$TARGET" \
+            -Z build-std=std,panic_abort \
+            -Z build-std-features=panic_immediate_abort
 
       # 产物自检：文件存在、架构对得上，顺便把体积写进 Actions 摘要。
       - name: Verify binary

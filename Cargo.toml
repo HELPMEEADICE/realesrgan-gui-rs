@@ -61,13 +61,26 @@ winresource = "=0.1.31"
 # 单 codegen unit、abort panic 和符号剥离，尽可能压缩最终二进制。
 # 真正的重计算（Real-ESRGAN 推理）在外部 ncnn 进程中完成，
 # 因此这里牺牲一点 Rust 侧速度来换取更小的分发包是划算的。
+#
+# 把这些选项写全（包括本来就是 release 默认值的 debug / debug-assertions）
+# 是为了让「体积优先」这件事在文件里自洽，而不是靠记忆里的默认值。
 opt-level = "z"
 lto = "fat"
 codegen-units = 1
 panic = "abort"
 incremental = false
 overflow-checks = false
+debug = false
+debug-assertions = false
+# macOS 默认会额外产出 .dSYM；分发包里用不到，关掉既能少生成文件也能缩短构建。
+split-debuginfo = "off"
 strip = true
+
+# 再往下的体积收益要靠 libstd 本身，那需要 nightly 的
+# `-Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort`
+# 与 `-Zlocation-detail=none`。这些开关不能写进 Cargo.toml（stable 上会被拒绝），
+# 所以放在 .github/workflows/build.yml 的发布流水线里执行；
+# 本地用 stable 直接 `cargo build --release` 仍然得到与上面这套配置一致的结果。
 
 # 依赖也按体积优先生成，避免第三方 crate 把 `opt-level = 3` 的体积带回来。
 [profile.release.package."*"]
