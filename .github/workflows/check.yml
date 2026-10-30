@@ -40,10 +40,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-check-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-check-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-check-cargo-
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-${{ runner.arch }}-check-cargo-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
 
       - name: Install Linux dependencies
         run: |

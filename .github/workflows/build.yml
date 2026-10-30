@@ -18,6 +18,8 @@ permissions:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    # 某个平台卡在排队或挂死时，尽早失败，而不是让整条流水线挂在那里。
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -28,7 +30,15 @@ jobs:
           - os: ubuntu-latest
             artifact: realesrgan-gui-Linux
             binary: realesrgan-gui
-          - os: macos-latest
+          # 这里必须固定 macOS 镜像，不能用 macos-latest：
+          # macos-latest 现在指向 macOS 26 的 arm64 镜像，而 arm64 托管机池长期排队，
+          # job 拿不到机器就会被取消（annotations 里的 “The job was not acquired by
+          # Runner of type hosted even after multiple attempts”），整条 build 流水线
+          # 因此失败，即使 Linux / Windows 两边都已经构建成功。
+          # 固定到 x64 镜像后机池稳定；产物是 x86_64，正好和 Release 里打包的
+          # Real-ESRGAN macOS 二进制（同样是 x86_64）架构一致，Apple Silicon 通过
+          # Rosetta 运行。以后 arm64 机池恢复正常，可以换回 macos-latest / macos-26。
+          - os: macos-15-intel
             artifact: realesrgan-gui-macOS
             binary: realesrgan-gui
     steps:
@@ -44,8 +54,11 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          # 缓存键里带上 runner.arch：macOS 换了镜像架构以后，
+          # 旧的 arm64 target 产物不能被恢复到 x64 机器上。
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -90,6 +103,7 @@ jobs:
     needs: build
     if: ${{ github.event_name == 'release' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
