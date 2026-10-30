@@ -30,14 +30,13 @@ jobs:
           - os: ubuntu-latest
             artifact: realesrgan-gui-Linux
             binary: realesrgan-gui
-          # 这里必须固定 macOS 镜像，不能用 macos-latest：
+          # 这里固定 macOS 镜像，不用 macos-latest：
           # macos-latest 现在指向 macOS 26 的 arm64 镜像，而 arm64 托管机池长期排队，
           # job 拿不到机器就会被取消（annotations 里的 “The job was not acquired by
           # Runner of type hosted even after multiple attempts”），整条 build 流水线
           # 因此失败，即使 Linux / Windows 两边都已经构建成功。
-          # 固定到 x64 镜像后机池稳定；产物是 x86_64，正好和 Release 里打包的
-          # Real-ESRGAN macOS 二进制（同样是 x86_64）架构一致，Apple Silicon 通过
-          # Rosetta 运行。以后 arm64 机池恢复正常，可以换回 macos-latest / macos-26。
+          # 固定到 x64 镜像后机池稳定；arm64 的二进制不靠 arm64 runner，而是在这台
+          # Intel 机器上交叉编译出两个切片再用 lipo 合成 universal2（见下面的构建步骤）。
           - os: macos-15-intel
             artifact: realesrgan-gui-macOS
             binary: realesrgan-gui
@@ -73,11 +72,36 @@ jobs:
             libxcb-xfixes0-dev \
             libfontconfig1-dev
 
+      - name: Export build time
+        shell: bash
+        run: echo "REGUI_BUILD_TIME=$(date +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
+
       - name: Build
+        if: runner.os != 'macOS'
+        shell: bash
+        run: cargo build --release --locked
+
+      # macOS 产出 universal2 二进制：在 Intel 机器上分别编译 x86_64 与 arm64
+      # 两个切片，再用 lipo 合成一个文件，这样同一个二进制在 Intel 和 Apple
+      # Silicon 上都是原生执行，也不需要依赖长期排队的 arm64 托管机池。
+      # 交叉编译 C 代码（libwebp）由 cc-rs 自动加 `-arch arm64` 和当前 SDK 处理。
+      - name: Build macOS universal (x86_64 + arm64)
+        if: runner.os == 'macOS'
         shell: bash
         run: |
-          echo "REGUI_BUILD_TIME=$(date +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
-          cargo build --release --locked
+          rustup target add aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          cargo build --release --locked --target aarch64-apple-darwin
+          mkdir -p target/release
+          lipo -create \
+            target/x86_64-apple-darwin/release/realesrgan-gui \
+            target/aarch64-apple-darwin/release/realesrgan-gui \
+            -output target/release/realesrgan-gui
+          ARCHS=$(lipo -archs target/release/realesrgan-gui)
+          echo "universal binary architectures: ${ARCHS}"
+          echo "### macOS 产物架构：${ARCHS}" >> "$GITHUB_STEP_SUMMARY"
+          case "$ARCHS" in *x86_64*) ;; *) echo "missing x86_64 slice"; exit 1 ;; esac
+          case "$ARCHS" in *arm64*) ;; *) echo "missing arm64 slice"; exit 1 ;; esac
 
       # 把真实二进制体积写进 Actions 摘要，方便持续跟踪体积变化。
       - name: Report binary size
