@@ -13,9 +13,7 @@ pub const UPSCALER_NAMES: [&str; 3] = [
     "realcugan-ncnn-vulkan",
 ];
 
-pub const IMAGE_EXTENSIONS: [&str; 7] = [
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".tif", ".tiff",
-];
+pub const IMAGE_EXTENSIONS: [&str; 7] = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".tif", ".tiff"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum UpscalerKind {
@@ -79,9 +77,7 @@ pub fn find_upscaler() -> PathBuf {
             return candidate;
         }
     }
-    app_path().join(executable_name(
-        UPSCALER_NAMES[UPSCALER_NAMES.len() - 1],
-    ))
+    app_path().join(executable_name(UPSCALER_NAMES[UPSCALER_NAMES.len() - 1]))
 }
 
 pub fn upscaler_kind(path: &Path) -> UpscalerKind {

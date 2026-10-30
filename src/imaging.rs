@@ -13,8 +13,8 @@ use image::codecs::png::PngEncoder;
 use image::codecs::tiff::TiffEncoder;
 use image::codecs::webp::WebPEncoder;
 use image::{
-    AnimationDecoder, Delay, DynamicImage, GrayImage, ImageEncoder, ImageReader, Luma, Rgba,
-    RgbaImage, RgbImage,
+    AnimationDecoder, Delay, DynamicImage, GrayImage, ImageEncoder, ImageReader, Luma, RgbImage,
+    Rgba, RgbaImage,
 };
 
 use crate::model::Downsample;
@@ -122,7 +122,8 @@ pub fn resize_image(
 /// Creates the output file with a buffered writer, the way every save path
 /// below starts.
 fn create_writer(path: &Path) -> Result<BufWriter<File>> {
-    let file = File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
+    let file =
+        File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
     Ok(BufWriter::new(file))
 }
 
@@ -338,7 +339,9 @@ pub fn composite_over_white(image: &RgbaImage) -> RgbaImage {
         let _ = alpha;
         let a = pixel[3] as f32 / 255.0;
         let blend = |channel: u8| -> u8 {
-            (channel as f32 * a + 255.0 * (1.0 - a)).round().clamp(0.0, 255.0) as u8
+            (channel as f32 * a + 255.0 * (1.0 - a))
+                .round()
+                .clamp(0.0, 255.0) as u8
         };
         output.put_pixel(
             x,
@@ -399,8 +402,7 @@ pub fn gaussian_blur(image: &GrayImage, sigma: f32) -> GrayImage {
         for x in 0..width {
             let mut accumulator = 0.0f32;
             for (index, weight) in kernel.iter().enumerate() {
-                let sx = (x as i32 + index as i32 - radius)
-                    .clamp(0, width as i32 - 1) as u32;
+                let sx = (x as i32 + index as i32 - radius).clamp(0, width as i32 - 1) as u32;
                 accumulator += image.get_pixel(sx, y)[0] as f32 * weight;
             }
             horizontal.put_pixel(x, y, Luma([accumulator.round().clamp(0.0, 255.0) as u8]));
@@ -412,8 +414,7 @@ pub fn gaussian_blur(image: &GrayImage, sigma: f32) -> GrayImage {
         for x in 0..width {
             let mut accumulator = 0.0f32;
             for (index, weight) in kernel.iter().enumerate() {
-                let sy = (y as i32 + index as i32 - radius)
-                    .clamp(0, height as i32 - 1) as u32;
+                let sy = (y as i32 + index as i32 - radius).clamp(0, height as i32 - 1) as u32;
                 accumulator += horizontal.get_pixel(x, sy)[0] as f32 * weight;
             }
             vertical.put_pixel(x, y, Luma([accumulator.round().clamp(0.0, 255.0) as u8]));

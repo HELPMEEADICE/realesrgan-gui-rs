@@ -61,9 +61,7 @@ impl Config {
                 None => continue,
             };
             let key = key.trim().to_string();
-            config
-                .entries
-                .insert(key.clone(), value.trim().to_string());
+            config.entries.insert(key.clone(), value.trim().to_string());
             current_key = Some(key);
         }
 
@@ -95,7 +93,11 @@ impl Config {
     }
 
     pub fn get_bool(&self, key: &str, default: bool) -> bool {
-        match self.entries.get(key).map(|value| value.trim().to_ascii_lowercase()) {
+        match self
+            .entries
+            .get(key)
+            .map(|value| value.trim().to_ascii_lowercase())
+        {
             Some(value) => match value.as_str() {
                 "1" | "yes" | "true" | "on" => true,
                 "0" | "no" | "false" | "off" => false,

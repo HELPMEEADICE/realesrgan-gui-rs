@@ -215,8 +215,14 @@ impl App {
         config.set("ResizeRatio", ui.get_resize_ratio().to_string());
         config.set("ResizeWidth", ui.get_resize_width().to_string());
         config.set("ResizeHeight", ui.get_resize_height().to_string());
-        config.set("ResizeLongestSide", ui.get_resize_longest_side().to_string());
-        config.set("ResizeShortestSide", ui.get_resize_shortest_side().to_string());
+        config.set(
+            "ResizeLongestSide",
+            ui.get_resize_longest_side().to_string(),
+        );
+        config.set(
+            "ResizeShortestSide",
+            ui.get_resize_shortest_side().to_string(),
+        );
         config.set(
             "Model",
             state
@@ -274,7 +280,8 @@ fn install_callbacks(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     {
         let weak = ui.as_weak();
         ui.on_browse_output(move || {
-            let Some(ui) = weak.upgrade() else { return };            let picked = rfd::FileDialog::new()
+            let Some(ui) = weak.upgrade() else { return };
+            let picked = rfd::FileDialog::new()
                 .add_filter("Image files", &["png", "gif", "webp"])
                 .pick_file();
             if let Some(file) = picked {
@@ -798,7 +805,12 @@ fn make_tasks(
                 params.clone(),
                 false,
             )),
-            Box::new(LossyCompressTask::new(intermediate, target, lossy_quality, true)),
+            Box::new(LossyCompressTask::new(
+                intermediate,
+                target,
+                lossy_quality,
+                true,
+            )),
         ];
     }
 
@@ -939,16 +951,24 @@ fn apply_translations(ui: &AppWindow, i18n: &I18n) {
         set("OpenFileDialog", &|value| strings.set_browse(value));
         set("UsedModel", &|value| strings.set_used_model(value));
         set("ResizeMode", &|value| strings.set_resize_mode(value));
-        set("ResizeModeRatio", &|value| strings.set_resize_mode_ratio(value));
-        set("ResizeModeWidth", &|value| strings.set_resize_mode_width(value));
-        set("ResizeModeHeight", &|value| strings.set_resize_mode_height(value));
+        set("ResizeModeRatio", &|value| {
+            strings.set_resize_mode_ratio(value)
+        });
+        set("ResizeModeWidth", &|value| {
+            strings.set_resize_mode_width(value)
+        });
+        set("ResizeModeHeight", &|value| {
+            strings.set_resize_mode_height(value)
+        });
         set("ResizeModeLongestSide", &|value| {
             strings.set_resize_mode_longest_side(value)
         });
         set("ResizeModeShortestSide", &|value| {
             strings.set_resize_mode_shortest_side(value)
         });
-        set("DownsampleMode", &|value| strings.set_downsample_mode(value));
+        set("DownsampleMode", &|value| {
+            strings.set_downsample_mode(value)
+        });
         set("TileSize", &|value| strings.set_tile_size(value));
         set("UsedGPUID", &|value| strings.set_used_gpu_id(value));
         set("LossyModeQuality", &|value| {
@@ -960,22 +980,34 @@ fn apply_translations(ui: &AppWindow, i18n: &I18n) {
         set("GIFOptimizeTransparency", &|value| {
             strings.set_gif_optimize_transparency(value)
         });
-        set("EnableLossyMode", &|value| strings.set_enable_lossy_mode(value));
+        set("EnableLossyMode", &|value| {
+            strings.set_enable_lossy_mode(value)
+        });
         set("EnableIgnoreError", &|value| {
             strings.set_enable_ignore_error(value)
         });
-        set("EnablePreupscale", &|value| strings.set_enable_preupscale(value));
+        set("EnablePreupscale", &|value| {
+            strings.set_enable_preupscale(value)
+        });
         set("ViewREGUISource", &|value| strings.set_view_source(value));
         set("ViewRESource", &|value| strings.set_view_re_source(value));
         set("ViewAdditionalModel", &|value| {
             strings.set_view_additional_model(value)
         });
-        set("ViewDonatePage", &|value| strings.set_view_donate_page(value));
+        set("ViewDonatePage", &|value| {
+            strings.set_view_donate_page(value)
+        });
         set("FrameBasicConfig", &|value| strings.set_tab_basic(value));
-        set("FrameAdvancedConfig", &|value| strings.set_tab_advanced(value));
+        set("FrameAdvancedConfig", &|value| {
+            strings.set_tab_advanced(value)
+        });
         set("FrameAbout", &|value| strings.set_tab_about(value));
-        set("StartProcessing", &|value| strings.set_start_processing(value));
-        set("PauseProcessing", &|value| strings.set_pause_processing(value));
+        set("StartProcessing", &|value| {
+            strings.set_start_processing(value)
+        });
+        set("PauseProcessing", &|value| {
+            strings.set_pause_processing(value)
+        });
         set("ContinueProcessing", &|value| {
             strings.set_continue_processing(value)
         });

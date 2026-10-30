@@ -21,7 +21,6 @@ impl ResizeMode {
             _ => ResizeMode::Ratio,
         }
     }
-
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -45,8 +44,9 @@ impl Downsample {
     ];
 
     /// Names shown in the combo box, matching PIL's `Image.Resampling` names.
-    pub const NAMES: [&'static str; 6] =
-        ["Lanczos", "Bicubic", "Hamming", "Bilinear", "Box", "Nearest"];
+    pub const NAMES: [&'static str; 6] = [
+        "Lanczos", "Bicubic", "Hamming", "Bilinear", "Box", "Nearest",
+    ];
 
     pub fn from_index(index: i32) -> Self {
         Downsample::ALL

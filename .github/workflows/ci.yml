@@ -62,10 +62,9 @@ jobs:
             libxcb-xfixes0-dev \
             libfontconfig1-dev
 
-      # 只做提示不做门禁：当前代码还没跑过 cargo fmt，直接卡住会挡住其他检查。
-      # 等 `cargo fmt --all` 统一格式后，去掉 continue-on-error 即可变成强制检查。
+      # 强制门禁：源码已由 `cargo fmt --all` 统一格式。
+      # 本地提交前跑一遍 `cargo fmt --all` 即可，不需要再靠 continue-on-error 放行。
       - name: Rust 格式检查（cargo fmt）
-        continue-on-error: true
         run: cargo fmt --all -- --check
 
       # ui/app.slint 由 build.rs 里的 slint_build 编译，所以 check / clippy

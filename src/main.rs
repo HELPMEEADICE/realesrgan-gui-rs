@@ -100,15 +100,12 @@ fn run() -> anyhow::Result<()> {
 
     {
         let weak = Rc::downgrade(&application);
-        application
-            .window()
-            .window()
-            .on_close_requested(move || {
-                if let Some(application) = weak.upgrade() {
-                    application.persist_config();
-                }
-                slint::CloseRequestResponse::HideWindow
-            });
+        application.window().window().on_close_requested(move || {
+            if let Some(application) = weak.upgrade() {
+                application.persist_config();
+            }
+            slint::CloseRequestResponse::HideWindow
+        });
     }
 
     application.run()?;
@@ -117,10 +114,7 @@ fn run() -> anyhow::Result<()> {
 
 /// Enumerates the models in `model_dir`, reproducing
 /// `init_config_and_model_paths` including the Real-CUGAN file name scheme.
-fn discover_models(
-    model_dir: &Path,
-    kind: UpscalerKind,
-) -> (Vec<String>, HashMap<String, u32>) {
+fn discover_models(model_dir: &Path, kind: UpscalerKind) -> (Vec<String>, HashMap<String, u32>) {
     let mut models: Vec<String> = Vec::new();
 
     if kind == UpscalerKind::Realcugan {
@@ -143,10 +137,9 @@ fn discover_models(
         for name in directories {
             for scale in 2..=4 {
                 for noise in NOISE_LEVELS {
-                    let base = model_dir
-                        .join(&name)
-                        .join(format!("up{scale}x-{noise}"));
-                    if base.with_extension("bin").exists() && base.with_extension("param").exists() {
+                    let base = model_dir.join(&name).join(format!("up{scale}x-{noise}"));
+                    if base.with_extension("bin").exists() && base.with_extension("param").exists()
+                    {
                         models.push(format!("{name}#up{scale}x-{noise}"));
                     }
                 }

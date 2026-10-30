@@ -103,14 +103,20 @@ impl PauseFlag {
     }
 
     pub fn set(&self, running: bool) {
-        let mut guard = self.running.lock().unwrap_or_else(|error| error.into_inner());
+        let mut guard = self
+            .running
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         *guard = running;
         drop(guard);
         self.signal.notify_all();
     }
 
     pub fn wait(&self) {
-        let mut guard = self.running.lock().unwrap_or_else(|error| error.into_inner());
+        let mut guard = self
+            .running
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         while !*guard {
             guard = self
                 .signal
@@ -118,7 +124,6 @@ impl PauseFlag {
                 .unwrap_or_else(|error| error.into_inner());
         }
     }
-
 }
 
 pub type OutputFn = Arc<dyn Fn(&str) + Send + Sync>;
@@ -245,7 +250,8 @@ impl ReSpawnTask {
                             .strip_prefix("denoise")
                             .and_then(|rest| rest.strip_suffix('x'))
                             .and_then(|digits| digits.parse::<i32>().ok());
-                        level.ok_or_else(|| anyhow!("unsupported Real-CUGAN noise level: {noise}"))?
+                        level
+                            .ok_or_else(|| anyhow!("unsupported Real-CUGAN noise level: {noise}"))?
                     }
                 };
                 command.extend([
@@ -358,10 +364,7 @@ impl ReSpawnTask {
 
 impl Task for ReSpawnTask {
     fn run(&mut self, ctx: &TaskContext) -> Result<Vec<Box<dyn Task>>> {
-        (ctx.out)(&format!(
-            "Using executable: {}\n",
-            ctx.re_path.display()
-        ));
+        (ctx.out)(&format!("Using executable: {}\n", ctx.re_path.display()));
         ctx.progress.set_current(0.0);
 
         let mut input = self.input.clone();
@@ -462,11 +465,7 @@ impl Task for ReSpawnTask {
         // input -> output, or input -> temp0 -> ... -> output
         let output_extension = paths::extension_lower(&self.output);
         let mut files: Vec<PathBuf> = Vec::with_capacity(scale_pass + 1);
-        files.push(
-            preupscaled
-                .clone()
-                .unwrap_or_else(|| input.clone()),
-        );
+        files.push(preupscaled.clone().unwrap_or_else(|| input.clone()));
         for _ in 0..scale_pass {
             files.push(imaging::temp_path(&output_extension));
         }
@@ -504,11 +503,19 @@ impl Task for ReSpawnTask {
             if files.len() == 1 {
                 // Nothing was upscaled, do not consume the source file.
                 std::fs::copy(&last, &self.output).with_context(|| {
-                    format!("failed to copy {} to {}", last.display(), self.output.display())
+                    format!(
+                        "failed to copy {} to {}",
+                        last.display(),
+                        self.output.display()
+                    )
                 })?;
             } else {
                 move_file(&last, &self.output).with_context(|| {
-                    format!("failed to move {} to {}", last.display(), self.output.display())
+                    format!(
+                        "failed to move {} to {}",
+                        last.display(),
+                        self.output.display()
+                    )
                 })?;
             }
         } else {
@@ -639,7 +646,10 @@ impl Task for SplitGifTask {
 
             if self.optimize_transparency {
                 let composited = imaging::composite_over_white(&frame);
-                imaging::save_lossless(&image::DynamicImage::ImageRgba8(composited), &frame_source)?;
+                imaging::save_lossless(
+                    &image::DynamicImage::ImageRgba8(composited),
+                    &frame_source,
+                )?;
             } else {
                 imaging::save_lossless(&image::DynamicImage::ImageRgba8(frame), &frame_source)?;
             }
@@ -982,7 +992,10 @@ mod tests {
         assert_eq!(split_extension_text("a.tar.gz"), ("a.tar", ".gz"));
         assert_eq!(split_extension_text(".bashrc"), (".bashrc", ""));
         assert_eq!(split_extension_text(r"C:\dir\file"), (r"C:\dir\file", ""));
-        assert_eq!(split_extension_text(r"C:\dir\file.JPG"), (r"C:\dir\file", ".JPG"));
+        assert_eq!(
+            split_extension_text(r"C:\dir\file.JPG"),
+            (r"C:\dir\file", ".JPG")
+        );
 
         assert_eq!(
             with_extension(Path::new("dir/name.jpg"), ".png"),

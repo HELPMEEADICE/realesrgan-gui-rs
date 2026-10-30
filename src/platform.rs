@@ -123,11 +123,8 @@ impl WindowsTaskbar {
 
     fn set_value(&self, completed: u64, total: u64) {
         let _ = unsafe {
-            self.list.SetProgressValue(
-                self.hwnd,
-                completed,
-                total.clamp(1, u64::MAX),
-            )
+            self.list
+                .SetProgressValue(self.hwnd, completed, total.clamp(1, u64::MAX))
         };
     }
 }
