@@ -141,12 +141,17 @@ jobs:
         shell: bash
         run: echo "REGUI_BUILD_TIME=$(date +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
 
-      # 三条只在 nightly 上可用的体积开关：
+      # 体积开关（都只在 nightly 上可用）：
       #   -Z build-std=std,panic_abort
-      #       让 std 也按 Cargo.toml 的 [profile.release]（opt-level = "z"、
-      #       Fat LTO、panic = "abort"）重新编译，而不是沿用发行版预先优化的 -O3 std；
-      #   -Z build-std-features=panic_immediate_abort
-      #       panic 直接 abort，省掉格式化参数、位置信息和 Backtrace 相关的代码与字符串；
+      #       让 std 也按 Cargo.toml 的 [profile.release]（opt-level = "z"、Fat LTO）
+      #       重新编译，而不是沿用发行版预先优化的 -O3 std；
+      #   panic = "immediate-abort"
+      #       真正的 abort 策略：panic 直接调 intrinsics::abort()，std 里格式化参数、
+      #       位置信息、Backtrace 那条链路全部不进产物。旧的
+      #       -Z build-std-features=panic_immediate_abort 已经退役，nightly 现在只会
+      #       报 compile_error 让你改用这个策略；这个值 stable 不认，所以不写进
+      #       Cargo.toml，而是用 CARGO_PROFILE_RELEASE_PANIC 只覆盖这一次构建，
+      #       -Zpanic-immediate-abort 则是它的 cargo 特性门；
       #   -Zlocation-detail=none
       #       连 panic 位置里的文件/行号字符串也一并去掉。
       - name: Build
@@ -155,9 +160,18 @@ jobs:
           TARGET: ${{ matrix.target }}
           RUSTFLAGS: -Zlocation-detail=none
         run: |
-          cargo build --release --locked --target "$TARGET" \
-            -Z build-std=std,panic_abort \
-            -Z build-std-features=panic_immediate_abort
+          set -euo pipefail
+          if CARGO_PROFILE_RELEASE_PANIC=immediate-abort \
+             cargo build --release --locked --target "$TARGET" \
+               -Zpanic-immediate-abort \
+               -Z build-std=std,panic_abort; then
+            exit 0
+          fi
+          # 保底：immediate-abort 万一在某个平台或某天的 nightly 上不可用，退回普通
+          # abort 策略继续出包（std 仍按 -Oz 重编，只是略大一点），而不是让整条
+          # 发布流水线挂掉。
+          echo "::warning title=panic-strategy::panic=immediate-abort 不可用，已回退到 panic=abort（产物略大）"
+          cargo build --release --locked --target "$TARGET" -Z build-std=std,panic_abort
 
       # 产物自检：文件存在、架构对得上，顺便把体积写进 Actions 摘要。
       - name: Verify binary

@@ -76,11 +76,12 @@ debug-assertions = false
 split-debuginfo = "off"
 strip = true
 
-# 再往下的体积收益要靠 libstd 本身，那需要 nightly 的
-# `-Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort`
-# 与 `-Zlocation-detail=none`。这些开关不能写进 Cargo.toml（stable 上会被拒绝），
-# 所以放在 .github/workflows/build.yml 的发布流水线里执行；
-# 本地用 stable 直接 `cargo build --release` 仍然得到与上面这套配置一致的结果。
+# 再往下的体积收益要靠 libstd 本身：nightly 的 `-Z build-std=std,panic_abort`
+# 会把 std 也按上面这套体积优先参数重编，`panic = "immediate-abort"`
+# （由 CARGO_PROFILE_RELEASE_PANIC + -Zpanic-immediate-abort 只在 CI 里打开）
+# 再把 panic 变成真正的 abort。这些开关不能写进 Cargo.toml——stable 既不认
+# immediate-abort 也不认 -Z 标志——所以统一放在 .github/workflows/build.yml 里；
+# 本地用 stable 直接 `cargo build --release` 仍与上面这套配置一致。
 
 # 依赖也按体积优先生成，避免第三方 crate 把 `opt-level = 3` 的体积带回来。
 [profile.release.package."*"]
