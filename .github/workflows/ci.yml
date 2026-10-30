@@ -1,0 +1,133 @@
+name: CI
+
+# 代码质量门禁 + 三平台编译冒烟。
+# 这里只验证「代码能不能过」，不产出分发包；真正要下载的分发包见 build.yml。
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: 10
+
+jobs:
+  # 静态检查只在 Linux 上跑一遍：fmt / clippy / test 的结果与平台无关，跑三次纯属浪费。
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-check-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-check-cargo-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+
+      # Slint 用的是 winit 后端，Linux 上需要窗口系统相关的开发包；
+      # 界面走软件渲染器，不需要 OpenGL 开发包。
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libfontconfig1-dev
+
+      # 只做提示不做门禁：当前代码还没跑过 cargo fmt，直接卡住会挡住其他检查。
+      # 等 `cargo fmt --all` 统一格式后，去掉 continue-on-error 即可变成强制检查。
+      - name: Rust 格式检查（cargo fmt）
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      # ui/app.slint 由 build.rs 里的 slint_build 编译，所以 check / clippy
+      # 会顺带完整校验 Slint 语法与属性名，.slint 写错会直接让步骤失败。
+      - name: Cargo check（含 Slint 语法校验）
+        run: cargo check --all-targets --locked
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+  # 三个桌面平台各编译一次，拦住 `cfg(windows)` 之类的平台专属分支错误。
+  # 用 debug 构建：目的只是「能不能编译」，release 的 Fat LTO 太慢，留给 build.yml。
+  smoke:
+    name: Build smoke (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x86_64
+            os: windows-latest
+          - name: Linux x86_64
+            os: ubuntu-latest
+          # 固定 x64 镜像而不用 macos-latest：macos-latest 现在指向 arm64 镜像，
+          # 机池长期排队会拿不到机器，拖垮整条流水线。冒烟测试与架构无关，
+          # 用 x64 机器验证 macOS 侧代码能否编译即可。
+          - name: macOS x86_64
+            os: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-smoke-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-smoke-cargo-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libfontconfig1-dev
+
+      - name: Build
+        run: cargo build --locked
