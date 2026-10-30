@@ -24,8 +24,11 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # 手动触发时新的运行可以取消旧的；Release 触发的构建不互相取消。
-  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+  # 这里刻意不允许取消：一次构建要跑十几分钟、六个平台，中途被新运行打断只会
+  # 留下一堆 cancelled 的 job 和半套产物。手动触发的重复运行会排队串行执行，
+  # 代价是多花 runner 分钟，但任何一次结果都不会被悄悄丢掉。
+  # Release 之间本来就因 tag 不同而落在不同的 group 里，互不影响。
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
