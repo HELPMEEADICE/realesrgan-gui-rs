@@ -1,6 +1,8 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
 
+#[cfg(test)]
+mod alloc_probe;
 mod app;
 mod config;
 mod dragdrop;

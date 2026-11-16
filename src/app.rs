@@ -3,9 +3,9 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -38,6 +38,12 @@ const UI_LOG_TRIM_NOTICE: &str = "... earlier lines were omitted; see output.log
 /// `TextEdit` rebuilds its text layout whenever `text` changes, so incoming
 /// lines are coalesced into at most ten updates per second.
 const UI_LOG_REFRESH_INTERVAL: Duration = Duration::from_millis(100);
+/// How often the UI timer runs while a batch is processed, or while the native
+/// drop target is still waiting for the window handle.
+const TICK_ACTIVE: Duration = Duration::from_millis(30);
+/// Idle interval: a dropped file still shows up within a fifth of a second, but
+/// the process stops waking up thirty-three times per second for nothing.
+const TICK_IDLE: Duration = Duration::from_millis(200);
 
 enum UiMessage {
     Log(String),
@@ -62,11 +68,15 @@ struct State {
     pause: Arc<PauseFlag>,
     receiver: Option<Receiver<UiMessage>>,
     log_text: String,
-    log_file: Option<Arc<Mutex<std::fs::File>>>,
+    /// Buffered: the worker emits a line per upscaler progress report, and an
+    /// unbuffered file meant one write syscall per line.
+    log_file: Option<Arc<Mutex<BufWriter<std::fs::File>>>>,
     /// Set when `log_text` changed since the last push into the UI.
     log_dirty: bool,
     /// Time of the last push, used to coalesce `TextEdit` relayouts.
     log_updated_at: Option<Instant>,
+    /// Interval the UI timer currently runs at.
+    tick_interval: Duration,
     processing: bool,
     processing_paused: bool,
     progress_display: f32,
@@ -86,7 +96,8 @@ struct State {
 pub struct App {
     ui: AppWindow,
     state: Rc<RefCell<State>>,
-    _timer: Timer,
+    /// Only kept alive here: the callback holds a weak handle to it.
+    _timer: Rc<Timer>,
 }
 
 impl App {
@@ -119,6 +130,7 @@ impl App {
             log_file: None,
             log_dirty: false,
             log_updated_at: None,
+            tick_interval: TICK_ACTIVE,
             processing: false,
             processing_paused: false,
             progress_display: 0.0,
@@ -161,13 +173,17 @@ impl App {
 
         install_callbacks(&ui, &state);
 
-        let timer = Timer::default();
+        let timer = Rc::new(Timer::default());
         {
+            // A weak handle keeps the callback from owning the timer that owns
+            // the callback, and still lets `tick` slow the timer down when
+            // there is nothing to poll for.
+            let timer_handle = Rc::downgrade(&timer);
             let state = state.clone();
             let weak = ui.as_weak();
-            timer.start(TimerMode::Repeated, Duration::from_millis(30), move || {
+            timer.start(TimerMode::Repeated, TICK_ACTIVE, move || {
                 if let Some(ui) = weak.upgrade() {
-                    tick(&ui, &state);
+                    tick(&ui, &state, &timer_handle);
                 }
             });
         }
@@ -401,7 +417,7 @@ fn trim_log_tail(text: &mut String) {
 }
 
 /// Polls the worker thread and updates the UI. Runs on the UI thread.
-fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>) {
+fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>, timer: &Weak<Timer>) {
     ensure_drop_target(ui, state);
     drain_dropped_files(ui, state);
 
@@ -456,7 +472,14 @@ fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>) {
                 guard.processing = false;
                 guard.processing_paused = false;
                 guard.pause.set(true);
-                guard.log_file = None;
+                // The log went through a buffer on its way to disk, so flush it
+                // before the handle is dropped. Every write happened before the
+                // worker sent this message, so the tail is complete here.
+                if let Some(file) = guard.log_file.take() {
+                    if let Ok(mut file) = file.lock() {
+                        let _ = file.flush();
+                    }
+                }
                 guard.receiver = None;
                 ui.set_processing(false);
                 ui.set_processing_paused(false);
@@ -495,6 +518,20 @@ fn tick(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             guard.log_dirty = false;
             guard.log_updated_at = Some(Instant::now());
         }
+    }
+
+    // Poll at full speed only while there is something to poll for: a running
+    // batch, or the window handle the drop target is still waiting for.
+    let interval = if guard.processing || guard.drop_target.is_none() {
+        TICK_ACTIVE
+    } else {
+        TICK_IDLE
+    };
+    if guard.tick_interval != interval {
+        if let Some(timer) = timer.upgrade() {
+            timer.set_interval(interval);
+        }
+        guard.tick_interval = interval;
     }
 }
 
@@ -658,7 +695,7 @@ fn start_processing(ui: &AppWindow, state: &Rc<RefCell<State>>) {
         .unwrap_or_default();
     let log_file = std::fs::File::create(paths::log_path())
         .ok()
-        .map(|file| Arc::new(Mutex::new(file)));
+        .map(|file| Arc::new(Mutex::new(BufWriter::with_capacity(64 * 1024, file))));
     guard.log_file = log_file.clone();
 
     let (sender, receiver) = channel::<UiMessage>();

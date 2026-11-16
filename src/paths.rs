@@ -94,15 +94,52 @@ pub fn initial_input_paths() -> Vec<PathBuf> {
 }
 
 pub fn is_image_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| IMAGE_EXTENSIONS.contains(&format!(".{}", e.to_ascii_lowercase()).as_str()))
-        .unwrap_or(false)
+    // The list carries the leading dot, so compare without it and ignore the
+    // case instead of lowercasing into a temporary String for every directory
+    // entry of a folder scan.
+    match path.extension().and_then(|extension| extension.to_str()) {
+        Some(extension) => IMAGE_EXTENSIONS
+            .iter()
+            .any(|candidate| extension.eq_ignore_ascii_case(&candidate[1..])),
+        None => false,
+    }
 }
 
 pub fn extension_lower(path: &Path) -> String {
     match path.extension().and_then(|e| e.to_str()) {
         Some(e) => format!(".{}", e.to_ascii_lowercase()),
         None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognises_image_paths_regardless_of_case() {
+        for name in [
+            "a.png",
+            "b.PNG",
+            "c.JpEg",
+            "d.tif",
+            "e.TIFF",
+            "f.webp",
+            "g.gif",
+            "dir/h.jpeg",
+        ] {
+            assert!(is_image_path(Path::new(name)), "{name} is an image");
+        }
+        for name in [
+            "a.txt",
+            "b",
+            "c.pngs",
+            ".png",
+            "d.mp4",
+            "e.png.bak",
+            "f.tiff2",
+        ] {
+            assert!(!is_image_path(Path::new(name)), "{name} is not an image");
+        }
     }
 }

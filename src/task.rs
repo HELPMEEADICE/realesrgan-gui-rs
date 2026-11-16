@@ -1,5 +1,6 @@
 //! The processing pipeline: the Rust counterpart of `task.py`.
 
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -332,14 +333,22 @@ impl ReSpawnTask {
             if read == 0 {
                 break;
             }
-            let line = String::from_utf8_lossy(&buffer)
-                .trim_end_matches(['\r', '\n'])
-                .to_string();
+            // Borrow the line in the normal case and only pay for the lossy
+            // conversion when the upscaler emits invalid UTF-8.
+            let text = match std::str::from_utf8(&buffer) {
+                Ok(text) => Cow::Borrowed(text.trim_end_matches(['\r', '\n'])),
+                Err(_) => Cow::Owned(
+                    String::from_utf8_lossy(&buffer)
+                        .trim_end_matches(['\r', '\n'])
+                        .to_string(),
+                ),
+            };
+            let line: &str = &text;
 
             // Order matters: the original used `if/elif`.
-            if let Some(path) = parse_alpha_override(&line) {
+            if let Some(path) = parse_alpha_override(line) {
                 alpha_override = Some(PathBuf::from(path));
-            } else if let Some(percent) = parse_percentage(&line) {
+            } else if let Some(percent) = parse_percentage(line) {
                 ctx.progress
                     .set_current((index as f64 + percent / 100.0) / steps as f64);
             } else if line.contains(" -> ") && line.ends_with(" done") {
@@ -591,7 +600,7 @@ impl Task for MergeGifTask {
         for (index, frame) in self.frames.iter().enumerate() {
             let mut image = imaging::open_image(frame)?.into_rgba8();
             if self.optimize_transparency {
-                image = imaging::optimize_gif_alpha(&image);
+                imaging::optimize_gif_alpha_in_place(&mut image);
             }
             let _ = std::fs::remove_file(frame);
             let duration = self.durations.get(index).copied().unwrap_or(0);
@@ -640,19 +649,16 @@ impl Task for SplitGifTask {
         // Frames are written out as they are decoded. Previously the complete
         // animation was decoded into a Vec first, so peak memory was
         // proportional to the frame count.
-        imaging::for_each_gif_frame(&self.input, |frame, duration| {
+        imaging::for_each_gif_frame(&self.input, |mut frame, duration| {
             let frame_source = imaging::temp_path(extension);
             let frame_destination = imaging::temp_path(extension);
 
+            // The decoded frame is ours, so the composite happens in place
+            // instead of allocating a second full size buffer.
             if self.optimize_transparency {
-                let composited = imaging::composite_over_white(&frame);
-                imaging::save_lossless(
-                    &image::DynamicImage::ImageRgba8(composited),
-                    &frame_source,
-                )?;
-            } else {
-                imaging::save_lossless(&image::DynamicImage::ImageRgba8(frame), &frame_source)?;
+                imaging::composite_over_white_in_place(&mut frame);
             }
+            imaging::save_lossless(&image::DynamicImage::ImageRgba8(frame), &frame_source)?;
 
             (ctx.out)(&format!(
                 "Frame #{index}: {} -> {} Duration: {duration}\n",

@@ -86,3 +86,53 @@ strip = true
 # 依赖也按体积优先生成，避免第三方 crate 把 `opt-level = 3` 的体积带回来。
 [profile.release.package."*"]
 opt-level = "z"
+# 图像编解码与缩放的热循环全在第三方 crate 里：解码 PNG/JPEG、Lanczos 重采样、
+# deflate 压缩、GIF 调色板量化。它们决定了「解码 -> 缩放 -> 编码」这条路径的
+# 耗时，而这条路径是 ncnn 推理之外 Rust 侧最重的一块。
+#
+# 这里把它们单独从 -Oz 提到 -O3，本项目自身的 UI / 接线代码以及 Slint、winit
+# 仍然留在上面的 -Oz——体积优先的总体取向不变，只是不再让最热的几个循环也
+# 为体积让步。实测（Windows x86_64，4096x4096 探测样本）：
+#   JPEG 解码 805.6 ms -> 271 ms
+#   Lanczos 1/4 723.8 ms -> 302 ms
+#   PNG 编码 63.1 ms -> 37.7 ms
+#   发布产物 9888256 B -> 10182656 B（+294 KB）
+# 要回到纯体积优先，删掉这一段即可（上面的 package."*" 会重新接管）。
+[profile.release.package.image]
+opt-level = 3
+
+[profile.release.package.png]
+opt-level = 3
+
+[profile.release.package.zune-jpeg]
+opt-level = 3
+
+[profile.release.package.zune-core]
+opt-level = 3
+
+[profile.release.package.image-webp]
+opt-level = 3
+
+[profile.release.package.gif]
+opt-level = 3
+
+[profile.release.package.weezl]
+opt-level = 3
+
+[profile.release.package.fdeflate]
+opt-level = 3
+
+[profile.release.package.flate2]
+opt-level = 3
+
+[profile.release.package.miniz_oxide]
+opt-level = 3
+
+[profile.release.package.tiff]
+opt-level = 3
+
+[profile.release.package.color_quant]
+opt-level = 3
+
+[profile.release.package.webp]
+opt-level = 3
