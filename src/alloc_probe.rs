@@ -29,9 +29,24 @@ impl Counting {
     fn shrink(size: usize) {
         // Saturating keeps the counter sane when the harness frees buffers that
         // were allocated before the first measurement.
-        let _ = LIVE.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |live| {
-            Some(live.saturating_sub(size))
-        });
+        //
+        // Written as an explicit CAS loop instead of `fetch_update`: the method
+        // was renamed to `try_update` in newer rustc versions, which makes the
+        // old name a deprecation warning and therefore a hard error under
+        // `-D warnings`. This form compiles unchanged on every toolchain the
+        // project supports, and matches `TaskState::sub_total`.
+        let mut live = LIVE.load(Ordering::Relaxed);
+        loop {
+            match LIVE.compare_exchange_weak(
+                live,
+                live.saturating_sub(size),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(actual) => live = actual,
+            }
+        }
     }
 }
 
