@@ -136,3 +136,9 @@ opt-level = 3
 
 [profile.release.package.webp]
 opt-level = 3
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = 0
